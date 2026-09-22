@@ -1,0 +1,12 @@
+﻿# Chrome paketleri / anahtarlar
+*.crx
+*.pem
+*.zip
+# Sistem / editör
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+node_modules/
+*.log

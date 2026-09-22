@@ -1,0 +1,120 @@
+/* Gallery Grab: sol menü sekmesi + ana ekran paneli */
+
+/* ---------- Sol menü sekmesi (EA'nın .ut-tab-bar-item sınıfını miras alır) ---------- */
+.fcg-tab {
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  position: relative;
+}
+.fcg-tab::before,
+.fcg-tab::after { content: none !important; }
+
+.fcg-icon {
+  width: 34px;
+  height: 34px;
+  padding: 3px;
+  box-sizing: border-box;
+  color: #2fd08a;
+  flex: none;
+  pointer-events: none;
+}
+.fcg-lbl {
+  font: 600 10px/1.1 "Segoe UI", Arial, sans-serif;
+  color: inherit;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+.fcg-tab:hover .fcg-icon { filter: brightness(1.2); }
+.fcg-tab.fcg-active { background: rgba(47, 208, 138, 0.16) !important; box-shadow: inset 3px 0 0 #2fd08a; }
+.fcg-tab.fcg-active .fcg-lbl { color: #2fd08a; }
+
+/* ---------- Menü bulunamazsa yüzen buton (Kangal Snip'inkinin altında) ---------- */
+.fcg-dock {
+  position: fixed;
+  left: 6px;
+  top: calc(45% + 50px);
+  z-index: 2147483001;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid #2a2f3a;
+  border-radius: 10px;
+  background: #181b22;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+.fcg-dock.fcg-active { border-color: #2fd08a; }
+
+/* ---------- Ana ekran paneli ---------- */
+.fcg-panel {
+  position: fixed;
+  left: var(--fcg-left, 0);
+  top: var(--fcg-top, 0);
+  right: 0;
+  bottom: var(--fcg-bottom, 0);
+  z-index: 2147483000;
+  display: flex;
+  flex-direction: column;
+  background: #0f1115;
+  color: #e7e9ee;
+  font: 13px/1.4 "Segoe UI", system-ui, sans-serif;
+  border-left: 1px solid #2a2f3a;
+}
+.fcg-panel[hidden] { display: none !important; }
+
+.fcg-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  background: #181b22;
+  border-bottom: 1px solid #2a2f3a;
+  flex: none;
+}
+.fcg-title { display: flex; align-items: center; gap: 6px; font-size: 14px; letter-spacing: 1px; }
+.fcg-title .fcg-icon { width: 28px; height: 28px; }
+.fcg-title b { color: #2fd08a; }
+.fcg-spacer { flex: 1; }
+
+.fcg-btn {
+  background: #1f232c;
+  color: #e7e9ee;
+  border: 1px solid #2a2f3a;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+.fcg-btn:hover { border-color: #8b93a3; }
+.fcg-btn-primary { background: #2fd08a; color: #06140d; border-color: #2fd08a; font-weight: 600; }
+
+.fcg-body { position: relative; flex: 1; min-height: 0; }
+.fcg-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #0f1115; }
+
+.fcg-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  background: #0f1115;
+}
+.fcg-fallback[hidden] { display: none !important; }
+.fcg-fallback p { margin: 0; color: #8b93a3; max-width: 420px; }
+
+@media (max-width: 600px) {
+  .fcg-panel { left: 0; }
+}
