@@ -59,7 +59,7 @@ async function load() {
   const r = await chrome.storage.local.get(['galleryList', 'gallerySettings', 'galleryRun']);
   return {
     list: r.galleryList || [],
-    settings: { budget: 0, skipOwned: false, ...(r.gallerySettings || {}) },
+    settings: { budget: 0, skipOwned: false, expectClub: null, ...(r.gallerySettings || {}) },
     run: { ...DEFAULT_RUN, ...(r.galleryRun || {}) },
   };
 }
@@ -370,6 +370,12 @@ chrome.runtime.onMessage.addListener((msg, _s, reply) => {
       case 'setSkipOwned': {
         const { settings } = await load();
         await chrome.storage.local.set({ gallerySettings: { ...settings, skipOwned: !!msg.value } });
+        return { ok: true };
+      }
+      case 'setExpectClub': {   // null = otomatik çoğunluk, sayı = sabitlenmiş kulüp
+        const { settings } = await load();
+        const v = Number(msg.value) || null;
+        await chrome.storage.local.set({ gallerySettings: { ...settings, expectClub: v } });
         return { ok: true };
       }
       case 'refreshCoins': { const coins = parseCoins(await api.credits()); await patchRun({ coins }); return { ok: true, coins }; }
