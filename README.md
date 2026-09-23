@@ -1,6 +1,6 @@
 # Gallery Grab
 
-FC 27 Ultimate Team Web App için Chrome eklentisi (Manifest V3). Galeri (koleksiyon) doldurmak için listedeki her oyuncudan, **hangi versiyon olursa olsun en ucuz BIN ilanından 1 kart** alır.
+FC 27 Ultimate Team Web App için **Tampermonkey kullanıcı scripti** (eski MV3 Chrome eklentisi sürümü de repoda duruyor). Galeri (koleksiyon) doldurmak için listedeki her oyuncudan, **hangi versiyon olursa olsun en ucuz BIN ilanından 1 kart** alır.
 
 > **Uyarı:** Web App'te otomatik alım yapmak EA kullanım şartlarına aykırıdır ve hesabın kısıtlanmasına ya da yasaklanmasına yol açabilir. Kullanım riski tamamen kullanıcıya aittir.
 
@@ -16,9 +16,18 @@ FC 27 Ultimate Team Web App için Chrome eklentisi (Manifest V3). Galeri (koleks
 - **Bütçe:** Toplam bütçe sınırı konabilir. Coin yetmezse o oyuncu atlanır.
 - **Hata protokolü:** Captcha, 429, 471, 494, softban ya da 401 alınırsa tüm çalışma durur ve bildirim gösterilir.
 - **Liste durumları:** bekliyor · alındı · bulunamadı · bütçe yetmedi · hata. "Atlananları tekrar dene" düğmesi var.
-- **Arayüz:** Web App sol menüsünün en altında **GALLERY** sekmesi ve gömülü panel. Popup olarak da açılır.
+- **Arayüz:** Web App sol menüsünün en altında **GALLERY** sekmesi ve tam ekran panel.
 
-## Kurulum
+## Kurulum — Tampermonkey (önerilen, v2.0.0)
+
+1. Chrome'a [Tampermonkey](https://www.tampermonkey.net/) kur.
+2. `userscript/gallery-grab.user.js` dosyasını Tampermonkey'de aç (dosyayı sürükle-bırak ya da **Yeni script** → içeriği yapıştır → kaydet).
+3. EA FC Web App'i aç, giriş yap, **Transfer Pazarı → Oyuncu Ara** ekranını bir kez aç (oturum, oyuncu veritabanı ve isim sözlükleri bu sırada hazırlanır).
+4. Sol menünün en altındaki **GALLERY** sekmesinden paneli aç.
+
+> Alım döngüsü yalnız Web App sekmesi açıkken sürer; sekmeyi kapatırsan çalışma durur.
+
+## Kurulum — Chrome eklentisi (v1.3.0, artık geliştirilmiyor)
 
 1. `chrome://extensions` sayfasını aç, **Geliştirici modu**'nu etkinleştir.
 2. **Paketlenmemiş öğe yükle** ile bu klasörü seç.
@@ -29,7 +38,8 @@ FC 27 Ultimate Team Web App için Chrome eklentisi (Manifest V3). Galeri (koleks
 
 | Dosya | Görev |
 |---|---|
-| `manifest.json` | MV3 tanımı |
+| `userscript/gallery-grab.user.js` | **Tampermonkey sürümü (v2.0.0) — tek dosyada tüm işlevler** |
+| `manifest.json` | MV3 tanımı (eklenti sürümü, v1.3.0) |
 | `inject.js` | Sayfa bağlamı. XHR'dan `X-UT-SID`, başlıklar ve API adresini yakalar |
 | `content.js` / `content.css` | Oturumu depoya yazar, keepalive sağlar, sol menü sekmesi ve paneli ekler |
 | `background.js` | Liste yönetimi, en ucuzu bulma, alım döngüsü, hata protokolü |
