@@ -2,7 +2,16 @@
 
 FC 27 Ultimate Team Web App için **Tampermonkey kullanıcı scripti** (eski MV3 Chrome eklentisi sürümü de repoda duruyor). Galeri (koleksiyon) doldurmak için listedeki her oyuncudan, **hangi versiyon olursa olsun en ucuz BIN ilanından 1 kart** alır.
 
-> **Uyarı:** Web App'te otomatik alım yapmak EA kullanım şartlarına aykırıdır ve hesabın kısıtlanmasına ya da yasaklanmasına yol açabilir. Kullanım riski tamamen kullanıcıya aittir.
+> **Uyarı:** Web App'te otomatik alım yapmak EA kullanım şartlarına aykırıdır ve hesabın kısıtlanmasına ya da kalıcı yasaklanmasına yol açabilir. Proje ücretsizdir, satılmaz, EA ile hiçbir bağlantısı yoktur ve garanti verilmez. Kullanım riski tamamen kullanıcıya aittir — ayrıntılar: [Sorumluluk reddi](#sorumluluk-reddi-ve-yasal-notlar).
+
+## Sorumluluk reddi ve yasal notlar
+
+- Bu proje **ücretsizdir, satılmaz** ve hiçbir şekilde ticari olarak sunulmaz. Kodu alıp **satmak, ücretli hizmete/aboneliğe katmak ya da başka türlü ticari amaçla kullanmak lisansla yasaklanmıştır**; kişisel kullanım, değiştirme ve paylaşma serbesttir. Kaynak kodu açıktır, lisansı [PolyForm Noncommercial 1.0.0](LICENSE)'dır — **ticari kullanım ve satış yasaktır** ve **hiçbir garanti verilmez** ("as is").
+- Bu proje **Electronic Arts Inc. ile hiçbir bağlantısı yoktur**, EA tarafından onaylanmamış, desteklenmemiş ya da sponsor edilmemiştir. "EA", "EA SPORTS", "FC", "FIFA" ve "Ultimate Team" sahiplerinin ticari markalarıdır; burada yalnızca tanımlama amacıyla anılır. Depoda EA'ya ait hiçbir görsel, ses, kod ya da veri bulunmaz — script çalışırken yalnızca kullanıcının tarayıcısının zaten indirdiği verileri okur.
+- **EA Web App'te otomatik işlem yapmak EA kullanım şartlarına aykırıdır.** Kullanmak hesabının kısıtlanmasına, oyun içi varlıklarının silinmesine ya da kalıcı yasaklanmasına yol açabilir. Bu riski kabul etmiyorsan kullanma.
+- Yazılım **eğitim ve kişisel deneme amacıyla** paylaşılmıştır. Kullanımdan doğan tüm sonuçlar (hesap yaptırımları, coin kaybı, veri kaybı dâhil) **tamamen kullanıcının sorumluluğundadır**; geliştirici hiçbir sorumluluk kabul etmez.
+- Herhangi bir güvenlik önlemi, ödeme sistemi ya da koruma mekanizması atlatılmaz; script kullanıcının kendi oturumunu, kendi tarayıcısında kullanır. Hesap satışı, coin ticareti ya da üçüncü kişiler adına işlem için kullanılamaz.
+- Hak sahibi bir kurum kaldırılmasını isterse depo kaldırılır — bunun için [İletişim](#i̇leti̇şi̇m) bölümündeki adrese yazılması yeterlidir.
 
 ## İletişim
 
@@ -23,14 +32,14 @@ Panelin altında da aynı bilgi ve kopyalama düğmesi var; çalışmayı durdur
 - **Liste durumları:** bekliyor · alındı · bulunamadı · bütçe yetmedi · hata. "Atlananları tekrar dene" düğmesi var.
 - **Arayüz:** Web App sol menüsünün en altında **GALLERY** sekmesi ve tam ekran panel.
 
-## Kurulum — Tampermonkey (önerilen, v2.0.0)
+## Kurulum — Tampermonkey (önerilen)
 
 1. Chrome'a [Tampermonkey](https://www.tampermonkey.net/) kur.
-2. `userscript/gallery-grab.user.js` dosyasını Tampermonkey'de aç (dosyayı sürükle-bırak ya da **Yeni script** → içeriği yapıştır → kaydet).
+2. **[Scripti kur](https://raw.githubusercontent.com/JosephWRLD/gallery-grab/main/userscript/gallery-grab.user.js)** bağlantısına tıkla — Tampermonkey kurulum ekranını açar. (Alternatif: dosyanın içeriğini kopyalayıp Tampermonkey → **Yeni script** içine yapıştır ve kaydet.)
 3. EA FC Web App'i aç, giriş yap, **Transfer Pazarı → Oyuncu Ara** ekranını bir kez aç (oturum, oyuncu veritabanı ve isim sözlükleri bu sırada hazırlanır).
 4. Sol menünün en altındaki **GALLERY** sekmesinden paneli aç.
 
-> Alım döngüsü yalnız Web App sekmesi açıkken sürer; sekmeyi kapatırsan çalışma durur.
+Güncellemeler Tampermonkey tarafından kendiliğinden kontrol edilir.
 
 ## Kurulum — Chrome eklentisi (v1.3.0, artık geliştirilmiyor)
 

@@ -5,6 +5,17 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [2.0.2] — 2026-09-23
+
+### Eklendi
+- **Lisans: [PolyForm Noncommercial 1.0.0](LICENSE)** — kaynak tamamen açık, kişisel kullanım/değiştirme/paylaşma serbest, **ticari kullanım ve satış yasak**.
+- README'ye **Sorumluluk reddi ve yasal notlar** bölümü: garanti yok, EA ile bağlantı yok (marka notu), EA kullanım şartları uyarısı, hesap yaptırımlarının kullanıcı sorumluluğunda olduğu, depoda EA'ya ait veri bulunmadığı, hak sahibi talebinde deponun kaldırılacağı.
+- Script başlığına `@license`, `@homepageURL`, `@supportURL`.
+
+### Değişti
+- `@updateURL` / `@downloadURL` artık gerçek adres: `raw.githubusercontent.com/JosephWRLD/gallery-grab/main/userscript/gallery-grab.user.js` → Tampermonkey güncellemeleri kendiliğinden yakalıyor.
+- Depo **public** yapıldı (kaynak herkese açık).
+
 ## [2.0.1] — 2026-09-23
 
 ### Eklendi
