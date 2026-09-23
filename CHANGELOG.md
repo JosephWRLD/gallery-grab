@@ -5,6 +5,13 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [2.0.1] — 2026-09-23
+
+### Eklendi
+- **İletişim**: panelin altında "Sorun, hata ya da öneri olursa yaz — Discord: **yusuflnx**" satırı ve kullanıcı adını kopyalayan düğme.
+- Çalışmayı durduran ciddi hataların bildiriminde de iletişim bilgisi geçiyor ("Sorun sürerse yaz: Discord yusuflnx").
+- Script başlığında `@author` alanına Discord adı eklendi; açıklamaya iletişim notu girdi.
+
 ## [2.0.0] — 2026-09-23
 
 **Dağıtım biçimi değişti: Chrome eklentisi → Tampermonkey kullanıcı scripti.**
