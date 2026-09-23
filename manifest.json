@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "minimum_chrome_version": "111",
   "name": "Gallery Grab",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "FC Web App: listedeki her oyuncudan en ucuz 1 adet kart alır (Galeri için).",
   "permissions": ["storage", "scripting", "notifications"],
   "host_permissions": [
