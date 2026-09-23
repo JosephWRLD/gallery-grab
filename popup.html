@@ -44,6 +44,13 @@
   .tag.done { color:var(--acc); } .tag.budget, .tag.notfound { color:var(--warn); } .tag.error { color:var(--err); }
   .tag.owned { color:var(--acc); margin-left:6px; }
   #missing { color:var(--err); font-size:12px; margin-top:4px; }
+  select { background:var(--card); color:var(--tx); border:1px solid var(--line); border-radius:6px; padding:3px 6px; font:inherit; max-width:190px; }
+  /* Beklenen kulüpten farklı oyuncu: yanlış kart eklenmiş olabilir */
+  .it.bad { background:rgba(239,90,90,.10); border-left:2px solid var(--err); padding-left:4px; }
+  .it.bad > .n > span:first-child { color:var(--err); }
+  .it.bad .meta { color:var(--err); }
+  .tag.mismatch { color:var(--err); margin-left:6px; }
+  #mismatch { color:var(--err); font-size:12px; margin-top:6px; }
   /* Web App sol menüsünden iframe içinde açılınca */
   body.embedded { width:100%; min-height:100vh; }
   body.embedded header { display:none; }
@@ -81,6 +88,7 @@
 </section>
 
 <section>
+  <div id="mismatch"></div>
   <div id="list"></div>
   <div id="estimate"></div>
   <div class="row" style="margin-top:8px">
@@ -89,6 +97,11 @@
     <span class="mut" id="clubInfo">taranmadı</span>
   </div>
   <div class="mut" id="metaInfo"></div>
+  <div class="opt">
+    <span>Beklenen kulüp</span>
+    <select id="expectClub"></select>
+    <span class="mut" id="expectHint"></span>
+  </div>
   <label class="opt"><input type="checkbox" id="skipOwned" style="width:auto"> Kulübümde olanları atla</label>
   <div class="row" style="margin-top:8px">
     <button id="retry">Atlananları tekrar dene</button>

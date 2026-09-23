@@ -34,6 +34,29 @@ function icon(src, cls, alt) {
   return el;
 }
 
+// ---------------------------------------------------------------- beklenen kulüp
+// Kulüp bilgisi ancak fiyat taraması/alım sonrası dolduğu için yalnız bilinenler sayılır.
+function clubCounts(list) {
+  const m = new Map();
+  for (const x of list) {
+    if (!x.teamId) continue;
+    const k = String(x.teamId);
+    const e = m.get(k) || { teamId: x.teamId, club: x.club || '#' + x.teamId, n: 0 };
+    e.n++;
+    if (x.club && !String(x.club).startsWith('#')) e.club = x.club;
+    m.set(k, e);
+  }
+  return [...m.values()].sort((a, b) => b.n - a.n || String(a.club).localeCompare(b.club, 'tr'));
+}
+
+// Sabitlenmiş kulüp varsa o; yoksa çoğunluk. Beraberlikte ya da tek kulüpte uyarı verilmez.
+function expectedClub(counts, pinned) {
+  if (pinned && counts.some((c) => c.teamId === pinned)) return { teamId: pinned, auto: false };
+  if (counts.length < 2) return { teamId: null, auto: true, stale: !!pinned };
+  if (counts[0].n === counts[1].n) return { teamId: null, auto: true, tie: true, stale: !!pinned };
+  return { teamId: counts[0].teamId, auto: true, stale: !!pinned };
+}
+
 // Kulüp / lig / ülke satırı — bu bilgi ancak fiyat taraması veya alım sonrası dolar.
 function metaRow(x) {
   const bits = [x.position, x.club, x.league, x.nation].filter(Boolean).join(' · ');
@@ -80,16 +103,39 @@ async function render() {
   const total = galleryList.reduce((a, x) => a + (x.status === 'done' ? 0 : x.market || 0), 0);
   $('estimate').textContent = total ? `Tahmini kalan maliyet: ${fmt(total)} coin` : '';
 
+  // Beklenen kulüp seçici + uyumsuzluk uyarısı
+  const counts = clubCounts(galleryList);
+  const exp = expectedClub(counts, gallerySettings.expectClub || null);
+  const known = counts.reduce((a, c) => a + c.n, 0);
+  const autoName = counts.length && exp.auto && exp.teamId
+    ? counts.find((c) => c.teamId === exp.teamId)?.club : null;
+  const sel = $('expectClub');
+  sel.replaceChildren(
+    h('option', { value: '', text: autoName ? `Otomatik (${autoName})` : 'Otomatik (çoğunluk)' }),
+    ...counts.map((c) => h('option', { value: String(c.teamId), text: `${c.club} (${c.n})` })),
+  );
+  sel.value = exp.auto ? '' : String(exp.teamId);
+  sel.disabled = !counts.length;
+  $('expectHint').textContent = !known ? 'Kulüp bilgisi için "Fiyatları tara"'
+    : exp.tie ? 'çoğunluk yok — kulüp seçin'
+    : exp.stale && exp.auto ? 'seçilen kulüp listede yok' : '';
+
+  const bad = (x) => !!exp.teamId && !!x.teamId && x.teamId !== exp.teamId;
+  const badCount = galleryList.filter(bad).length;
+  $('mismatch').textContent = badCount
+    ? `${badCount} oyuncu farklı kulüpte — yanlış oyuncu eklenmiş olabilir` : '';
+
   $('list').replaceChildren(...(galleryList.length ? galleryList.map((x) => {
     const tag = x.status === 'done' ? `alındı · ${fmt(x.price)}` : LABEL[x.status] || x.status;
     const price = x.status !== 'done' && x.marketAt
       ? (x.market ? `~${fmt(x.market)}` : 'ilan yok')
       : null;
-    return h('div', { class: 'it' }, [
+    return h('div', { class: bad(x) ? 'it bad' : 'it' }, [
       icon(x.portrait, 'face'),
       h('div', { class: 'n' }, [
         h('span', { text: `${x.name}${x.rating ? ` (${x.rating})` : ''}` }),
         price ? h('span', { class: 'price', text: price }) : null,
+        bad(x) ? h('span', { class: 'tag mismatch', text: 'farklı kulüp' }) : null,
         owned.has(x.baseId) && x.status !== 'owned' ? h('span', { class: 'tag owned', text: 'sende var' }) : null,
         metaRow(x),
         x.note ? h('small', { text: x.note }) : null,
@@ -140,6 +186,7 @@ $('bulkBtn').addEventListener('click', async () => {
 // ---------------------------------------------------------------- kontroller
 $('budget').addEventListener('change', () => send({ type: 'setBudget', budget: Number($('budget').value) || 0 }));
 $('skipOwned').addEventListener('change', () => send({ type: 'setSkipOwned', value: $('skipOwned').checked }));
+$('expectClub').addEventListener('change', () => send({ type: 'setExpectClub', value: Number($('expectClub').value) || null }));
 $('toggle').addEventListener('click', async () => {
   const { galleryRun = {} } = await chrome.storage.local.get('galleryRun');
   if (galleryRun.running) return send({ type: 'stop' });

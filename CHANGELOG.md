@@ -5,6 +5,17 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [1.3.0] — 2026-09-23
+
+### Eklendi
+- **Farklı kulüp uyarısı**: listedeki oyuncuların kulübü beklenen kulüpten farklıysa o satır **kırmızı** görünür (kırmızı şerit + kırmızı isim + `farklı kulüp` rozeti), listenin üstünde özet çıkar: "N oyuncu farklı kulüpte — yanlış oyuncu eklenmiş olabilir". Aynı isimli oyuncu yüzünden yanlış kartın listeye girdiği tek bakışta görülür.
+- **Beklenen kulüp seçici**: varsayılan **otomatik** (listede en çok geçen kulüp), istenirse açılır listeden bir kulüp sabitlenir (`gallerySettings.expectClub`, `setExpectClub` mesajı).
+
+### Notlar
+- Kulüp bilgisi ancak **"Fiyatları tara"** ya da alım sonrası dolduğu için uyarı o zaman görünür; kulübü henüz bilinmeyen satır nötr kalır (yanlış alarm yok).
+- Tek kulüp varsa ya da en çok geçen iki kulüp eşit sayıdaysa uyarı verilmez; ikinci durumda panel "çoğunluk yok — kulüp seçin" der.
+- Uyarı yalnız görseldir: alımı engellemez, satırı atlamaz.
+
 ## [1.2.0] — 2026-09-23
 
 ### Eklendi

@@ -8,6 +8,7 @@ FC 27 Ultimate Team Web App için Chrome eklentisi (Manifest V3). Galeri (koleks
 
 - **Oyuncu arama:** Web App'in kendi `players.json` veritabanından; hem yaygın ad (Iniesta) hem tam ad (Andrés Iniesta Luján) eşleşir. Toplu ekleme için her satıra bir isim yazılır, bulunamayanlar kutuda kalır.
 - **Görsel ayırt etme:** Arama sonuçlarında ve listede oyuncunun **yüz fotoğrafı**; fiyat taraması veya alım sonrasında **kulüp arması, ülke bayrağı, mevki · kulüp · lig · ülke**. Aynı isimli oyuncuları ayırmak için.
+- **Farklı kulüp uyarısı:** Beklenen kulüp (varsayılan: listede en çok geçen kulüp, istenirse açılır listeden sabitlenir) dışında kalan oyuncuların satırı kırmızı görünür ve "farklı kulüp" rozeti alır; üstte kaç oyuncunun uyuşmadığı yazar. Uyarı yalnız görseldir, alımı engellemez.
 - **Fiyat taraması:** "Fiyatları tara" alım yapmadan her oyuncunun en ucuz BIN'ini ve kulüp/lig/ülke bilgisini doldurur, toplam tahmini maliyeti gösterir (30 dakikadan eski fiyatlar tazelenir).
 - **Kulüp taraması:** "Kulübü tara" kulüpteki oyuncuları okur; listede "sende var" rozeti çıkar. "Kulübümde olanları atla" açıksa alım sırasında atlanır.
 - **En ucuz ilanı bulma:** Kademeli `maxb` taramasıyla, en fazla 5 arama yapılır.
