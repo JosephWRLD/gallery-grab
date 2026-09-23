@@ -1,9 +1,12 @@
 // ==UserScript==
 // @name         Gallery Grab
 // @namespace    https://github.com/JosephWRLD/gallery-grab
-// @version      2.0.1
+// @version      2.0.2
 // @description  FC Web App: listedeki her oyuncudan en ucuz 1 kart alır (Galeri/koleksiyon doldurmak için)
 // @author       JosephWRLD — Discord: yusuflnx
+// @license      PolyForm-Noncommercial-1.0.0 (ticari kullanım/satış yasak)
+// @homepageURL  https://github.com/JosephWRLD/gallery-grab
+// @supportURL   https://github.com/JosephWRLD/gallery-grab/issues
 // @match        https://www.ea.com/*/ultimate-team/web-app/*
 // @match        https://www.easports.com/*/ultimate-team/web-app/*
 // @run-at       document-start
@@ -13,8 +16,8 @@
 // @grant        GM_getValue
 // @grant        GM_addStyle
 // @grant        GM_notification
-// @updateURL    https://example.com/gallery-grab.user.js
-// @downloadURL  https://example.com/gallery-grab.user.js
+// @updateURL    https://raw.githubusercontent.com/JosephWRLD/gallery-grab/main/userscript/gallery-grab.user.js
+// @downloadURL  https://raw.githubusercontent.com/JosephWRLD/gallery-grab/main/userscript/gallery-grab.user.js
 // ==/UserScript==
 
 /* Eklenti sürümünün (MV3) userscript'e taşınmış hâli. Fark: her şey sayfa bağlamında
