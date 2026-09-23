@@ -5,6 +5,28 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [2.0.0] — 2026-09-23
+
+**Dağıtım biçimi değişti: Chrome eklentisi → Tampermonkey kullanıcı scripti.**
+Tek dosya: `userscript/gallery-grab.user.js`. Kurulum için Chrome Web Store, paketleme ya da geliştirici modu gerekmiyor; güncelleme `@updateURL` ile kendiliğinden geliyor. MV3 eklenti sürümü (1.3.0) referans olarak repoda kalıyor ama artık geliştirilmiyor.
+
+### Eklendi
+- `userscript/gallery-grab.user.js`: eklentinin tüm işlevleri tek self-contained script içinde — oyuncu arama/toplu ekleme, en ucuz BIN bulma (kademeli `maxb`), alım döngüsü, bütçe, fiyat taraması, kulüp taraması, "sende var" rozeti, farklı kulüp uyarısı, hata protokolü, sol menüdeki GALLERY sekmesi ve panel.
+- Çalışma sürerken sekme kapatılmak istenirse tarayıcı uyarısı (`beforeunload`).
+
+### Değişti
+- Oturum: `chrome.storage` + content script köprüsü yerine XHR başlık yakalama doğrudan sayfa bağlamında; SID yedeği `window.services.Authentication.sessionUtas.id`.
+- EA istekleri: `chrome.scripting.executeScript` köprüsü kalktı, doğrudan sayfa `fetch`'i kullanılıyor (`credentials: 'omit'`).
+- Depolama: `chrome.storage.local` → `GM_setValue/GM_getValue` (senkron; yoksa `localStorage`). Durum değişince `chrome.storage.onChanged` yerine doğrudan `render()`.
+- Panel: `web_accessible_resources` + iframe yerine sayfaya doğrudan basılan DOM; stiller `#fcg-panel` altında kapsüllendi (EA'nın CSS'i sızmasın).
+- Bildirim: `chrome.notifications` → `GM_notification`.
+- Görseller (yüz, arma, bayrak) artık kayıtta tutulmuyor, çizim anında `imgBase`'den üretiliyor; sözlük sonradan yüklenince satırlar kendiliğinden düzeliyor.
+
+### Notlar
+- **Alım döngüsü yalnız Web App sekmesi açıkken sürer** (service worker yok). Sekme kapanırsa çalışma durur.
+- Popup penceresi yok; panel sol menüdeki GALLERY sekmesinden açılır.
+- Tampermonkey kurulu olmalı. Yayınlamak için `@updateURL` / `@downloadURL` satırlarındaki `example.com` gerçek adresle değiştirilmeli.
+
 ## [1.3.0] — 2026-09-23
 
 ### Eklendi
