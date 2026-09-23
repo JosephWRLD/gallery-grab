@@ -1,4 +1,4 @@
-# Gallery Grab — Kod Analizi (v1.1.1)
+# Gallery Grab — Kod Analizi (v1.2.0)
 
 Tarih: 2026-09-22. Kapsam: tüm kaynak dosyalar.
 
@@ -56,6 +56,19 @@ popup  ── add / bulkAdd / start / stop ──►  background.js
 | G7 | Bilgi | `background.js:231` | SW yeniden başlayınca çalışma otomatik devam etmiyor. Uzun listede Chrome SW'yi kapatırsa kullanıcı yeniden başlatmalı. | Bilinçli tercih, belgelendi. |
 
 ## 5. Doğrulanmamış varsayımlar
+
+**2026-09-23 keşfi ile doğrulananlar** (Web App'te çalıştırılan teşhis çıktısı):
+- `players.json` = `{ LegendsPlayers, Players }`; kayıt alanları yalnız `c/f/l/id/r` — **kulüp, lig, ülke, mevki YOK** (19.898 oyuncu + 136 ikon). Bu bilgi ancak item verisinden (`teamid`, `leagueId`, `nation`, `preferredPosition`) gelir.
+- Görsel kökü: `<content>/<yıl>/fut/items/images/mobile` → `portraits/<baseId>.png`, `clubs/{light,dark}/<teamId>.png`, `leagues/{light,dark}/<leagueId>.png`, `flags/dark/<nationId>.png`.
+- `teamconfig.json` **isim içermiyor**: `Years[0].Teams` = `[{TeamId, LeagueId}, …]`, yalnız takım→lig eşlemesi.
+- id→isim sözlükleri Web App'in yerelleştirme dosyalarında: `<content>/<yıl>/fut/loc/companion/futweb/{cdn,preload}/<dil>.json`. Anahtarlar `…team…<id>` / `…league…<id>` / `…nation…<id>` biçiminde; `lib/players.js` sayfanın indirdiği loc dosyalarını tarayıp bu kalıpla eşliyor (2026-09-23 ölçümü: 2584 kulüp, 151 lig, 218 ülke).
+- Web App bundle'ı obfuscated; endpoint şablonları statik olarak çıkarılamıyor.
+
+**Hâlâ doğrulanmamış:**
+- `GET /club?start&count&sort&sortBy&type=player` **çalıştı** (2026-09-23, 47 kart) ama tam sayfalama davranışı büyük kulüpte test edilmedi.
+- Kulüp yanıtında sahip olunan oyuncunun base id'si = `itemData.assetId` (endpoint 2026-09-23'te çalıştı, alan eşlemesi tek tek doğrulanmadı).
+- Kulüp yanıtındaki toplam alan adı (`totalResults` / `total` / `count`) — sayfalama üçünü de deniyor, hiçbiri yoksa sayfa boşalınca durur.
+- Yerelleştirme anahtar kalıbı sürüm değişince kayabilir; sözlük boş kalırsa panelde sebep + örnek anahtarlar gösteriliyor.
 
 - `players.json` alan adları ve `maskedDefId` = base id. Arama ve alımın çalıştığı kullanıcı tarafından doğrulandı, ama alan eşlemesi her oyuncu için test edilmedi.
 - Alım yanıtında coin alanı (`parseCoins(r)`).

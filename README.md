@@ -6,7 +6,10 @@ FC 27 Ultimate Team Web App için Chrome eklentisi (Manifest V3). Galeri (koleks
 
 ## Özellikler
 
-- **Oyuncu arama:** Web App'in kendi `players.json` veritabanından. Toplu ekleme için her satıra bir isim yazılır, bulunamayanlar kutuda kalır.
+- **Oyuncu arama:** Web App'in kendi `players.json` veritabanından; hem yaygın ad (Iniesta) hem tam ad (Andrés Iniesta Luján) eşleşir. Toplu ekleme için her satıra bir isim yazılır, bulunamayanlar kutuda kalır.
+- **Görsel ayırt etme:** Arama sonuçlarında ve listede oyuncunun **yüz fotoğrafı**; fiyat taraması veya alım sonrasında **kulüp arması, ülke bayrağı, mevki · kulüp · lig · ülke**. Aynı isimli oyuncuları ayırmak için.
+- **Fiyat taraması:** "Fiyatları tara" alım yapmadan her oyuncunun en ucuz BIN'ini ve kulüp/lig/ülke bilgisini doldurur, toplam tahmini maliyeti gösterir (30 dakikadan eski fiyatlar tazelenir).
+- **Kulüp taraması:** "Kulübü tara" kulüpteki oyuncuları okur; listede "sende var" rozeti çıkar. "Kulübümde olanları atla" açıksa alım sırasında atlanır.
 - **En ucuz ilanı bulma:** Kademeli `maxb` taramasıyla, en fazla 5 arama yapılır.
 - **Alım:** Başkası önce alırsa en fazla 3 kez tekrar denenir. Alınan kart **unassigned** havuzunda kalır.
 - **Bütçe:** Toplam bütçe sınırı konabilir. Coin yetmezse o oyuncu atlanır.
@@ -29,8 +32,9 @@ FC 27 Ultimate Team Web App için Chrome eklentisi (Manifest V3). Galeri (koleks
 | `inject.js` | Sayfa bağlamı. XHR'dan `X-UT-SID`, başlıklar ve API adresini yakalar |
 | `content.js` / `content.css` | Oturumu depoya yazar, keepalive sağlar, sol menü sekmesi ve paneli ekler |
 | `background.js` | Liste yönetimi, en ucuzu bulma, alım döngüsü, hata protokolü |
-| `lib/ea-api.js` | UT API istemcisi (`search`, `buyNow`, `credits`) |
-| `lib/players.js` | `players.json` üzerinden oyuncu arama |
+| `lib/ea-api.js` | UT API istemcisi (`search`, `buyNow`, `credits`, `club`) |
+| `lib/players.js` | `players.json` üzerinden oyuncu arama + yerelleştirme (loc) dosyalarından kulüp/lig/ülke id→isim sözlükleri |
+| `lib/img.js` | EA görsel adresleri (yüz, arma, lig, bayrak) |
 | `lib/pricing.js` | EA fiyat kademeleri |
 | `popup.html` / `popup.js` | Kontrol paneli |
 

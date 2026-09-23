@@ -25,9 +25,16 @@
   .stats b { display:block; font-size:14px; }
   #status { margin-top:6px; font-size:12px; }
   #status.error { color:var(--err); } #status.warn { color:var(--warn); } #status.ok { color:var(--acc); }
-  #results { max-height:150px; overflow:auto; margin-top:6px; }
-  #results div { padding:5px 6px; border-radius:4px; cursor:pointer; }
-  #results div:hover { background:var(--card); }
+  #results { max-height:210px; overflow:auto; margin-top:6px; }
+  .res { display:flex; align-items:center; gap:8px; padding:4px 6px; border-radius:4px; cursor:pointer; }
+  .res:hover { background:var(--card); }
+  .res small { display:block; color:var(--mut); font-size:11px; }
+  .face { width:28px; height:28px; border-radius:4px; object-fit:cover; flex:none; background:var(--card); }
+  .ic { width:14px; height:14px; object-fit:contain; }
+  .meta { display:flex; align-items:center; gap:4px; color:var(--mut); font-size:11px; margin-top:1px; }
+  .price { color:var(--warn); font-size:11px; margin-left:6px; }
+  .opt { display:flex; align-items:center; gap:6px; color:var(--mut); font-size:12px; margin-top:8px; }
+  #estimate { color:var(--mut); font-size:12px; margin-top:6px; }
   #list { max-height:230px; overflow:auto; }
   .it { display:flex; align-items:center; gap:6px; padding:5px 0; border-bottom:1px solid var(--line); }
   .it .n { flex:1; min-width:0; }
@@ -35,6 +42,7 @@
   .it .x { padding:2px 7px; }
   .tag { font-size:11px; padding:2px 6px; border-radius:10px; background:var(--card); white-space:nowrap; }
   .tag.done { color:var(--acc); } .tag.budget, .tag.notfound { color:var(--warn); } .tag.error { color:var(--err); }
+  .tag.owned { color:var(--acc); margin-left:6px; }
   #missing { color:var(--err); font-size:12px; margin-top:4px; }
   /* Web App sol menüsünden iframe içinde açılınca */
   body.embedded { width:100%; min-height:100vh; }
@@ -74,6 +82,14 @@
 
 <section>
   <div id="list"></div>
+  <div id="estimate"></div>
+  <div class="row" style="margin-top:8px">
+    <button id="scanPrices" title="Alım yapmadan en ucuz fiyatları ve kulüp/lig/ülke bilgisini doldurur">Fiyatları tara</button>
+    <button id="scanClub" title="Kulübündeki oyuncuları okur">Kulübü tara</button>
+    <span class="mut" id="clubInfo">taranmadı</span>
+  </div>
+  <div class="mut" id="metaInfo"></div>
+  <label class="opt"><input type="checkbox" id="skipOwned" style="width:auto"> Kulübümde olanları atla</label>
   <div class="row" style="margin-top:8px">
     <button id="retry">Atlananları tekrar dene</button>
     <button id="resetSpent">Harcananı sıfırla</button>
