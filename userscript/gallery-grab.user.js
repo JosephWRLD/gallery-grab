@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Gallery Grab
 // @namespace    https://github.com/JosephWRLD/gallery-grab
-// @version      2.0.0
+// @version      2.0.1
 // @description  FC Web App: listedeki her oyuncudan en ucuz 1 kart alır (Galeri/koleksiyon doldurmak için)
-// @author       JosephWRLD
+// @author       JosephWRLD — Discord: yusuflnx
 // @match        https://www.ea.com/*/ultimate-team/web-app/*
 // @match        https://www.easports.com/*/ultimate-team/web-app/*
 // @run-at       document-start
@@ -36,6 +36,7 @@
   const RETRY_MAX = 3;   // ilan başkası tarafından alınırsa yeniden deneme
   const META_TTL = 7 * 24 * 60 * 60 * 1000;
   const META_V = 2;
+  const CONTACT = 'yusuflnx';   // sorun/öneri için Discord kullanıcı adı
 
   function h(tag, props = {}, children = []) {
     const el = document.createElement(tag);
@@ -76,6 +77,9 @@
   const status = (text, level = 'ok') => { run.text = text; run.level = level; render(); };
   const item = (id) => list.find((x) => x.id === id);
   function patchItem(id, p) { const it = item(id); if (it) { Object.assign(it, p); saveList(); } }
+
+  // Ciddi hata bildiriminde iletişim bilgisi de görünsün.
+  const fail = (why) => notify('Gallery Grab durdu', `${why}\nSorun sürerse yaz: Discord ${CONTACT}`);
 
   function notify(title, text) {
     try { GM_notification({ title, text, timeout: 8000 }); } catch (_) { console.log('[Gallery Grab]', title, text); }
@@ -451,7 +455,7 @@
 
   function handleError(e, it) {
     const why = stopReason(e);
-    if (why) { notify('Gallery Grab durdu', why); stop(why, 'error'); return false; }
+    if (why) { fail(why); stop(why, 'error'); return false; }
     patchItem(it.id, { status: 'error', note: e?.status === 478 ? 'Liste dolu (478)' : `${e?.message || 'Hata'}` });
     return true;
   }
@@ -473,7 +477,7 @@
         if (item(it.id)?.status === 'done') bought++;
       } catch (e) {
         if (e?.status === 0 && ++netErr >= 3) {
-          notify('Gallery Grab durdu', 'Art arda bağlantı hatası');
+          fail('Art arda bağlantı hatası');
           return stop('Art arda bağlantı hatası', 'error');
         }
         if (!handleError(e, it)) return;
@@ -507,7 +511,7 @@
         n++;
       } catch (err) {
         const why = stopReason(err);
-        if (why) { notify('Gallery Grab durdu', why); return stop(why, 'error'); }
+        if (why) { fail(why); return stop(why, 'error'); }
         seen.add(it.id);
         patchItem(it.id, { marketAt: Date.now(), note: 'Fiyat alınamadı: ' + (err?.message || 'hata') });
       }
@@ -542,7 +546,7 @@
       }
     } catch (err) {
       const why = stopReason(err) || 'Kulüp taraması başarısız';
-      notify('Gallery Grab durdu', why);
+      fail(why);
       return stop(`${why} (${err?.status ?? ''} ${err?.message || ''})`, 'error');
     }
     if (my !== token) return;
@@ -658,6 +662,8 @@
 #fcg-panel .tag.mismatch { color:var(--err); margin-left:6px; }
 #fcg-panel .warnline { color:var(--err); font-size:12px; margin-top:6px; }
 #fcg-panel .missing { color:var(--err); font-size:12px; margin-top:4px; }
+#fcg-panel .fcg-foot { display:flex; align-items:center; gap:8px; padding:10px 0 0; color:#8b93a3; font-size:12px; border-bottom:0; }
+#fcg-panel .fcg-foot b { color:#2fd08a; font-family:ui-monospace, Consolas, monospace; }
 /* ---------- Sol menü sekmesi + yüzen buton ---------- */
 .fcg-tab { display:flex !important; flex-direction:column; align-items:center; justify-content:center; gap:3px; cursor:pointer; position:relative; }
 .fcg-tab::before, .fcg-tab::after { content:none !important; }
@@ -767,6 +773,20 @@
         el({ class: 'opt' }, [h('span', { text: 'Beklenen kulüp' }), expectClub, expectHint]),
         (() => { const l = h('label', { class: 'opt' }); l.append(skipOwned, document.createTextNode(' Kulübümde olanları atla')); return l; })(),
         el({ class: 'row', style: 'margin-top:8px' }, [retry, resetSpent, clear]),
+      ]),
+      // Sorun/öneri için iletişim
+      el({ class: 'fcg-foot' }, [
+        h('span', { text: 'Sorun, hata ya da öneri olursa yaz — Discord:' }),
+        h('b', { text: CONTACT }),
+        (() => {
+          const b = h('button', { text: 'Kopyala', title: 'Discord kullanıcı adını kopyala' });
+          b.addEventListener('click', async () => {
+            try { await navigator.clipboard.writeText(CONTACT); b.textContent = 'Kopyalandı'; }
+            catch (_) { b.textContent = CONTACT; }
+            setTimeout(() => { b.textContent = 'Kopyala'; }, 2000);
+          });
+          return b;
+        })(),
       ]),
     ])]);
 

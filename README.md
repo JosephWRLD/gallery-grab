@@ -4,6 +4,11 @@ FC 27 Ultimate Team Web App için **Tampermonkey kullanıcı scripti** (eski MV3
 
 > **Uyarı:** Web App'te otomatik alım yapmak EA kullanım şartlarına aykırıdır ve hesabın kısıtlanmasına ya da yasaklanmasına yol açabilir. Kullanım riski tamamen kullanıcıya aittir.
 
+## İletişim
+
+Sorun, hata ya da öneri olursa yaz: **Discord `yusuflnx`**
+Panelin altında da aynı bilgi ve kopyalama düğmesi var; çalışmayı durduran hatalarda bildirimde de görünür.
+
 ## Özellikler
 
 - **Oyuncu arama:** Web App'in kendi `players.json` veritabanından; hem yaygın ad (Iniesta) hem tam ad (Andrés Iniesta Luján) eşleşir. Toplu ekleme için her satıra bir isim yazılır, bulunamayanlar kutuda kalır.
