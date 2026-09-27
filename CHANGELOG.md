@@ -5,6 +5,11 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [2.1.1] / [1.4.1] — 2026-09-27
+
+### Değişti
+- GALLERY sekmesi yalnız **oyun açıkken**, sol menüde görünüyor. Giriş ve yükleme ekranında sol kenarda çıkan yüzen buton kaldırıldı. Oturum kapanıp menü kaybolursa açık panel de kapanıyor.
+
 ## [2.1.0] — 2026-09-27 (userscript)
 
 - Chrome eklentisi 1.4.0'daki **Galeri ekranının tamamı** userscript'e taşındı (aşağıdaki 1.4.0 maddelerinin hepsi); panelde "GALERİ | OYUNCU LİSTESİ" sekmeleri.

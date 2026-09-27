@@ -1,11 +1,11 @@
 // İzole dünyada çalışır.
 //  1) inject.js'ten gelen oturumu storage'a yazar.
 //  2) Service worker'ı canlı tutar.
-//  3) EA Web App'in sol menüsünün EN ALTINA "GALERİ" sekmesi ekler; tıklanınca ana ekranda panel açar.
+//  3) EA Web App'in sol menüsünün EN ALTINA "GALLERY" sekmesi ekler; tıklanınca ana ekranda panel açar.
+//     Sekme yalnız oyun açıkken (sol menü varken) görünür; giriş / yükleme ekranında hiçbir şey eklenmez.
 const SRC = 'fc-galeri';
 const PANEL_SRC = 'fcg-panel';
 const TAB_ID = 'fcg-tab';
-const DOCK_ID = 'fcg-dock';
 const PANEL_ID = 'fcg-panel';
 
 // ------------------------------------------------------------------ 1) Oturum yakalama
@@ -106,29 +106,31 @@ function buildTabItem(sample) {
   return el;
 }
 
+let navLostAt = 0;
 function ensureEntry() {
   const nav = findNav();
-  let tab = document.getElementById(TAB_ID);
-
-  if (nav) {
-    document.getElementById(DOCK_ID)?.remove();
-    const sample = nav.querySelector(`.ut-tab-bar-item:not(#${TAB_ID}):not([id^="fc27-"])`);
-    const host = sample ? sample.parentElement : nav;
-    if (tab && tab.parentElement !== host) { tab.remove(); tab = null; }
-    if (!tab) tab = buildTabItem(sample);
-    // Her zaman menünün en altında (Kangal Snip gibi diğer eklenti sekmelerinin de altında)
-    if (host.lastElementChild !== tab) host.appendChild(tab);
-  } else if (!tab && !document.getElementById(DOCK_ID) && document.body) {
-    const d = h('button', { id: DOCK_ID, class: 'fcg-dock', title: 'Gallery Grab' });
-    d.appendChild(galleryIcon());
-    document.body.appendChild(d);
+  if (!nav) {
+    // Oyun menüsü yok (giriş / yükleme ekranı ya da oturum kapandı): açık panel de kapansın.
+    // Menü yeniden çizilirken bir anlığına kaybolabilir; 1,5 sn yoksa kapat.
+    if (panelOpen) {
+      navLostAt ||= Date.now();
+      if (Date.now() - navLostAt > 1500) setOpen(false); else scheduleEnsure();
+    }
+    return;
   }
+  navLostAt = 0;
+  let tab = document.getElementById(TAB_ID);
+  const sample = nav.querySelector(`.ut-tab-bar-item:not(#${TAB_ID}):not([id^="fc27-"])`);
+  const host = sample ? sample.parentElement : nav;
+  if (tab && tab.parentElement !== host) { tab.remove(); tab = null; }
+  if (!tab) tab = buildTabItem(sample);
+  // Her zaman menünün en altında (Kangal Snip gibi diğer eklenti sekmelerinin de altında)
+  if (host.lastElementChild !== tab) host.appendChild(tab);
   syncActive();
 }
 
 function syncActive() {
-  [document.getElementById(TAB_ID), document.getElementById(DOCK_ID)].filter(Boolean)
-    .forEach((e) => e.classList.toggle('fcg-active', panelOpen));
+  document.getElementById(TAB_ID)?.classList.toggle('fcg-active', panelOpen);
 }
 
 function openExternal() {
@@ -173,8 +175,6 @@ function position() {
     if (r.height >= r.width) left = Math.round(r.right);               // dikey sol menü
     else if (r.top < window.innerHeight / 2) top = Math.round(r.bottom); // üstte yatay menü
     else bottom = Math.round(window.innerHeight - r.top);              // altta yatay menü
-  } else if (document.getElementById(DOCK_ID)) {
-    left = 52;
   }
   p.style.setProperty('--fcg-left', `${left}px`);
   p.style.setProperty('--fcg-top', `${top}px`);
@@ -193,14 +193,14 @@ function setOpen(open) {
 document.addEventListener('click', (e) => {
   const t = e.target;
   if (!(t instanceof Element)) return;
-  if (t.closest(`#${TAB_ID}, #${DOCK_ID}`)) {
+  if (t.closest(`#${TAB_ID}`)) {
     e.preventDefault();
     e.stopPropagation();
     setOpen(!panelOpen);
     return;
   }
   // Başka bir menü sekmesine (EA'nın ya da Kangal Snip'in) geçilirse paneli kapat
-  if (panelOpen && t.closest('.ut-tab-bar-item, .ut-tab-bar button, nav[class*="tab-bar"] button, #fc27-dock')) setOpen(false);
+  if (panelOpen && t.closest('.ut-tab-bar-item, .ut-tab-bar button, nav[class*="tab-bar"] button')) setOpen(false);
 }, true);
 
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && panelOpen) setOpen(false); });
