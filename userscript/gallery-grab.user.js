@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gallery Grab
 // @namespace    https://github.com/JosephWRLD/gallery-grab
-// @version      2.0.2
+// @version      2.0.3
 // @description  FC Web App: listedeki her oyuncudan en ucuz 1 kart alır (Galeri/koleksiyon doldurmak için)
 // @author       JosephWRLD — Discord: yusuflnx
 // @license      PolyForm-Noncommercial-1.0.0 (ticari kullanım/satış yasak)
@@ -38,7 +38,7 @@
   const PROBE_MAX = 5;   // en ucuzu bulmak için en fazla arama
   const RETRY_MAX = 3;   // ilan başkası tarafından alınırsa yeniden deneme
   const META_TTL = 7 * 24 * 60 * 60 * 1000;
-  const META_V = 2;
+  const META_V = 3;
   const CONTACT = 'yusuflnx';   // sorun/öneri için Discord kullanıcı adı
 
   function h(tag, props = {}, children = []) {
@@ -302,20 +302,34 @@
     };
     const plain = (m) => { const o = {}; for (const [k, x] of Object.entries(m)) o[k] = x.v; return o; };
 
+    // Asıl isim anahtarları binlerce id'yi aynı önekle taşır ("…team…<id>"); "…teamchem…1" gibi tekil
+    // metin anahtarları (ör. "Chemistry Points … %1") yalnız baskın önekler kabul edilerek elenir.
+    const collect = (pairs, re, exclude) => {
+      const byPrefix = new Map();
+      for (const [key, val] of pairs) {
+        if (!re.test(key) || (exclude && exclude.test(key)) || /[%{}]/.test(val)) continue;
+        const m = key.match(/^(.*?)([0-9]+)$/);
+        if (!m) continue;
+        const p = byPrefix.get(m[1]) || [];
+        p.push([m[2], key, val]);
+        byPrefix.set(m[1], p);
+      }
+      const max = Math.max(0, ...[...byPrefix.values()].map((p) => p.length));
+      const map = {};
+      for (const p of byPrefix.values()) if (p.length >= Math.max(10, max * 0.2)) for (const [id, key, val] of p) put(map, id, key, val);
+      return map;
+    };
+
     const meta = { imgBase, teams: {}, leagues: {}, nations: {} };
-    const teams = {}, leagues = {}, nations = {};
+    let teams = {}, leagues = {}, nations = {};
     try {
       for (const lu of locUrls.slice(0, 4)) {
         let j;
         try { j = await (await W.fetch(lu, { credentials: 'omit' })).json(); } catch (_) { continue; }
-        for (const [key, val] of flatten(j, '', [], 0)) {
-          const m = key.match(/([0-9]+)$/);
-          if (!m) continue;
-          const id = m[1];
-          if (/team|club/i.test(key)) put(teams, id, key, val);
-          else if (/league/i.test(key)) put(leagues, id, key, val);
-          else if (/nation|country/i.test(key)) put(nations, id, key, val);
-        }
+        const pairs = flatten(j, '', [], 0);
+        teams = collect(pairs, /team|club/i);
+        leagues = collect(pairs, /league/i, /team|club/i);
+        nations = collect(pairs, /nation|country/i, /team|club|league/i);
         if (Object.keys(teams).length) break;
       }
       meta.teams = plain(teams);
@@ -361,6 +375,10 @@
       club: name('teams', team), league: name('leagues', league), nation: name('nations', nation),
     };
   }
+
+  // Görüntülemede adı güncel sözlükten çöz; listede kayıtlı eski/yanlış ad yeniden tarama gerektirmesin.
+  const nameOf = (map, id, stored) => (id && metaCache?.[map]?.[String(id)]) || stored || null;
+  const clubOf = (x) => nameOf('teams', x.teamId, x.club);
 
   // ---------------------------------------------------------------- liste işlemleri
   function addPlayers(players) {
@@ -589,14 +607,20 @@
   }
 
   // ---------------------------------------------------------------- beklenen kulüp (v1.3 uyarısı)
+  // Kulüp anahtarı ada göre: erkek ve kadın takımı (ör. Arsenal) farklı teamId taşır ama aynı kulüptür.
+  function clubKey(x) {
+    if (!x.teamId) return null;
+    const c = clubOf(x);
+    return c && !String(c).startsWith('#') ? c.trim().toLocaleLowerCase('tr') : '#' + x.teamId;
+  }
+
   function clubCounts() {
     const m = new Map();
     for (const x of list) {
-      if (!x.teamId) continue;
-      const k = String(x.teamId);
-      const e = m.get(k) || { teamId: x.teamId, club: x.club || '#' + x.teamId, n: 0 };
+      const k = clubKey(x);
+      if (!k) continue;
+      const e = m.get(k) || { key: k, club: clubOf(x) || '#' + x.teamId, n: 0 };
       e.n++;
-      if (x.club && !String(x.club).startsWith('#')) e.club = x.club;
       m.set(k, e);
     }
     return [...m.values()].sort((a, b) => b.n - a.n || String(a.club).localeCompare(b.club, 'tr'));
@@ -604,10 +628,10 @@
 
   // Sabitlenmiş kulüp varsa o; yoksa çoğunluk. Beraberlikte ya da tek kulüpte uyarı verilmez.
   function expectedClub(counts, pinned) {
-    if (pinned && counts.some((c) => c.teamId === pinned)) return { teamId: pinned, auto: false };
-    if (counts.length < 2) return { teamId: null, auto: true, stale: !!pinned };
-    if (counts[0].n === counts[1].n) return { teamId: null, auto: true, tie: true, stale: !!pinned };
-    return { teamId: counts[0].teamId, auto: true, stale: !!pinned };
+    if (pinned && counts.some((c) => c.key === pinned)) return { key: pinned, auto: false };
+    if (counts.length < 2) return { key: null, auto: true, stale: !!pinned };
+    if (counts[0].n === counts[1].n) return { key: null, auto: true, tie: true, stale: !!pinned };
+    return { key: counts[0].key, auto: true, stale: !!pinned };
   }
 
   // ---------------------------------------------------------------- stil
@@ -809,7 +833,7 @@
     scanPricesBtn.addEventListener('click', () => startTask(scanPrices, 'Fiyat taraması başladı'));
     scanClubBtn.addEventListener('click', () => startTask(scanClub, 'Kulüp taraması başladı'));
     skipOwned.addEventListener('change', () => { settings.skipOwned = skipOwned.checked; saveSettings(); });
-    expectClub.addEventListener('change', () => { settings.expectClub = Number(expectClub.value) || null; saveSettings(); });
+    expectClub.addEventListener('change', () => { settings.expectClub = expectClub.value || null; saveSettings(); });
     retry.addEventListener('click', () => { list.forEach((x) => { if (x.status !== 'done') { x.status = 'pending'; x.note = ''; } }); saveList(); });
     resetSpent.addEventListener('click', () => { if (!run.running) setSpent(0); });
     clear.addEventListener('click', () => { list = []; saveList(); });
@@ -860,7 +884,7 @@
 
   // Kulüp / lig / ülke satırı — bu bilgi ancak fiyat taraması veya alım sonrası dolar.
   function metaRow(x) {
-    const bits = [x.position, x.club, x.league, x.nation].filter(Boolean).join(' · ');
+    const bits = [x.position, clubOf(x), nameOf('leagues', x.leagueId, x.league), nameOf('nations', x.nationId, x.nation)].filter(Boolean).join(' · ');
     const crest = img.crest(x.teamId);
     const flag = img.flag(x.nationId);
     if (!bits && !crest && !flag) return null;
@@ -898,18 +922,18 @@
     const counts = clubCounts();
     const exp = expectedClub(counts, settings.expectClub || null);
     const known = counts.reduce((a, c) => a + c.n, 0);
-    const autoName = exp.auto && exp.teamId ? counts.find((c) => c.teamId === exp.teamId)?.club : null;
+    const autoName = exp.auto && exp.key ? counts.find((c) => c.key === exp.key)?.club : null;
     ui.expectClub.replaceChildren(
       h('option', { value: '', text: autoName ? `Otomatik (${autoName})` : 'Otomatik (çoğunluk)' }),
-      ...counts.map((c) => h('option', { value: String(c.teamId), text: `${c.club} (${c.n})` })),
+      ...counts.map((c) => h('option', { value: c.key, text: `${c.club} (${c.n})` })),
     );
-    ui.expectClub.value = exp.auto ? '' : String(exp.teamId);
+    ui.expectClub.value = exp.auto ? '' : exp.key;
     ui.expectClub.disabled = !counts.length;
     ui.expectHint.textContent = !known ? 'Kulüp bilgisi için "Fiyatları tara"'
       : exp.tie ? 'çoğunluk yok — kulüp seçin'
       : exp.stale && exp.auto ? 'seçilen kulüp listede yok' : '';
 
-    const bad = (x) => !!exp.teamId && !!x.teamId && x.teamId !== exp.teamId;
+    const bad = (x) => { const k = clubKey(x); return !!exp.key && !!k && k !== exp.key; };
     const badCount = list.filter(bad).length;
     ui.warnline.textContent = badCount ? `${badCount} oyuncu farklı kulüpte — yanlış oyuncu eklenmiş olabilir` : '';
 
