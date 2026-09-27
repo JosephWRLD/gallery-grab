@@ -17,7 +17,7 @@ let token = 0;
 // ---------------------------------------------------------------- sabit veri (görsel + isim sözlükleri)
 const META_TTL = 7 * 24 * 60 * 60 * 1000;
 
-const META_V = 2;
+const META_V = 3;
 
 async function meta() {
   const { galleryMeta } = await chrome.storage.local.get('galleryMeta');
@@ -372,9 +372,9 @@ chrome.runtime.onMessage.addListener((msg, _s, reply) => {
         await chrome.storage.local.set({ gallerySettings: { ...settings, skipOwned: !!msg.value } });
         return { ok: true };
       }
-      case 'setExpectClub': {   // null = otomatik çoğunluk, sayı = sabitlenmiş kulüp
+      case 'setExpectClub': {   // null = otomatik çoğunluk, metin = sabitlenmiş kulüp (ad anahtarı)
         const { settings } = await load();
-        const v = Number(msg.value) || null;
+        const v = msg.value ? String(msg.value) : null;
         await chrome.storage.local.set({ gallerySettings: { ...settings, expectClub: v } });
         return { ok: true };
       }

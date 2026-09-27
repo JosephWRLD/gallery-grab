@@ -35,15 +35,26 @@ function icon(src, cls, alt) {
 }
 
 // ---------------------------------------------------------------- beklenen kulüp
+// Görüntülemede adı güncel sözlükten çöz; listede kayıtlı eski/yanlış ad yeniden tarama gerektirmesin.
+let META = null;
+const nameOf = (map, id, stored) => (id && META?.[map]?.[String(id)]) || stored || null;
+const clubOf = (x) => nameOf('teams', x.teamId, x.club);
+
+// Kulüp anahtarı ada göre: erkek ve kadın takımı (ör. Arsenal) farklı teamId taşır ama aynı kulüptür.
+function clubKey(x) {
+  if (!x.teamId) return null;
+  const c = clubOf(x);
+  return c && !String(c).startsWith('#') ? c.trim().toLocaleLowerCase('tr') : '#' + x.teamId;
+}
+
 // Kulüp bilgisi ancak fiyat taraması/alım sonrası dolduğu için yalnız bilinenler sayılır.
 function clubCounts(list) {
   const m = new Map();
   for (const x of list) {
-    if (!x.teamId) continue;
-    const k = String(x.teamId);
-    const e = m.get(k) || { teamId: x.teamId, club: x.club || '#' + x.teamId, n: 0 };
+    const k = clubKey(x);
+    if (!k) continue;
+    const e = m.get(k) || { key: k, club: clubOf(x) || '#' + x.teamId, n: 0 };
     e.n++;
-    if (x.club && !String(x.club).startsWith('#')) e.club = x.club;
     m.set(k, e);
   }
   return [...m.values()].sort((a, b) => b.n - a.n || String(a.club).localeCompare(b.club, 'tr'));
@@ -51,15 +62,15 @@ function clubCounts(list) {
 
 // Sabitlenmiş kulüp varsa o; yoksa çoğunluk. Beraberlikte ya da tek kulüpte uyarı verilmez.
 function expectedClub(counts, pinned) {
-  if (pinned && counts.some((c) => c.teamId === pinned)) return { teamId: pinned, auto: false };
-  if (counts.length < 2) return { teamId: null, auto: true, stale: !!pinned };
-  if (counts[0].n === counts[1].n) return { teamId: null, auto: true, tie: true, stale: !!pinned };
-  return { teamId: counts[0].teamId, auto: true, stale: !!pinned };
+  if (pinned && counts.some((c) => c.key === pinned)) return { key: pinned, auto: false };
+  if (counts.length < 2) return { key: null, auto: true, stale: !!pinned };
+  if (counts[0].n === counts[1].n) return { key: null, auto: true, tie: true, stale: !!pinned };
+  return { key: counts[0].key, auto: true, stale: !!pinned };
 }
 
 // Kulüp / lig / ülke satırı — bu bilgi ancak fiyat taraması veya alım sonrası dolar.
 function metaRow(x) {
-  const bits = [x.position, x.club, x.league, x.nation].filter(Boolean).join(' · ');
+  const bits = [x.position, clubOf(x), nameOf('leagues', x.leagueId, x.league), nameOf('nations', x.nationId, x.nation)].filter(Boolean).join(' · ');
   if (!bits && !x.crest && !x.flag) return null;
   return h('div', { class: 'meta' }, [
     icon(x.crest, 'ic', x.crestAlt),
@@ -71,6 +82,7 @@ function metaRow(x) {
 async function render() {
   const { galleryList = [], gallerySettings = {}, galleryRun = {}, clubBaseIds = [], clubScanAt = 0, clubFetched = 0, galleryMeta = null } =
     await chrome.storage.local.get(['galleryList', 'gallerySettings', 'galleryRun', 'clubBaseIds', 'clubScanAt', 'clubFetched', 'galleryMeta']);
+  META = galleryMeta?.v === 3 ? galleryMeta : null;   // background.js META_V ile aynı
   const budget = gallerySettings.budget || 0;
   const spent = galleryRun.spent || 0;
   const owned = new Set(clubBaseIds);
@@ -107,20 +119,20 @@ async function render() {
   const counts = clubCounts(galleryList);
   const exp = expectedClub(counts, gallerySettings.expectClub || null);
   const known = counts.reduce((a, c) => a + c.n, 0);
-  const autoName = counts.length && exp.auto && exp.teamId
-    ? counts.find((c) => c.teamId === exp.teamId)?.club : null;
+  const autoName = counts.length && exp.auto && exp.key
+    ? counts.find((c) => c.key === exp.key)?.club : null;
   const sel = $('expectClub');
   sel.replaceChildren(
     h('option', { value: '', text: autoName ? `Otomatik (${autoName})` : 'Otomatik (çoğunluk)' }),
-    ...counts.map((c) => h('option', { value: String(c.teamId), text: `${c.club} (${c.n})` })),
+    ...counts.map((c) => h('option', { value: c.key, text: `${c.club} (${c.n})` })),
   );
-  sel.value = exp.auto ? '' : String(exp.teamId);
+  sel.value = exp.auto ? '' : exp.key;
   sel.disabled = !counts.length;
   $('expectHint').textContent = !known ? 'Kulüp bilgisi için "Fiyatları tara"'
     : exp.tie ? 'çoğunluk yok — kulüp seçin'
     : exp.stale && exp.auto ? 'seçilen kulüp listede yok' : '';
 
-  const bad = (x) => !!exp.teamId && !!x.teamId && x.teamId !== exp.teamId;
+  const bad = (x) => { const k = clubKey(x); return !!exp.key && !!k && k !== exp.key; };
   const badCount = galleryList.filter(bad).length;
   $('mismatch').textContent = badCount
     ? `${badCount} oyuncu farklı kulüpte — yanlış oyuncu eklenmiş olabilir` : '';
@@ -186,7 +198,7 @@ $('bulkBtn').addEventListener('click', async () => {
 // ---------------------------------------------------------------- kontroller
 $('budget').addEventListener('change', () => send({ type: 'setBudget', budget: Number($('budget').value) || 0 }));
 $('skipOwned').addEventListener('change', () => send({ type: 'setSkipOwned', value: $('skipOwned').checked }));
-$('expectClub').addEventListener('change', () => send({ type: 'setExpectClub', value: Number($('expectClub').value) || null }));
+$('expectClub').addEventListener('change', () => send({ type: 'setExpectClub', value: $('expectClub').value || null }));
 $('toggle').addEventListener('click', async () => {
   const { galleryRun = {} } = await chrome.storage.local.get('galleryRun');
   if (galleryRun.running) return send({ type: 'stop' });

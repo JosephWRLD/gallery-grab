@@ -5,6 +5,17 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [2.0.3] — 2026-09-25
+
+### Düzeltildi
+- Bazı kulüplerin adı yanlış çıkıyordu. Örneğin erkek Arsenal (id 1) "Chemistry Points on Each Player: Max. %1" görünüyordu: yerelleştirme dosyasında sonu `1` ile biten ve içinde "team" geçen bir metin anahtarı kulüp adı sanılmıştı. Artık yalnız binlerce id'yi aynı önekle taşıyan asıl isim anahtarları kabul ediliyor, `%`/`{}` yer tutucusu içeren metinler eleniyor. Önbellek sürümü (`META_V` 3) artırıldı, eski sözlük kendiliğinden yenileniyor.
+- Farklı kulüp uyarısı artık kulüp **adına** göre karşılaştırıyor. Erkek ve kadın takımları (ör. Arsenal / Arsenal WSL) farklı `teamId` taşıdığı için yanlışlıkla "farklı kulüp" işaretleniyordu.
+- Kulüp/lig/ülke adı ekranda o anki sözlükten çözülüyor, listedeki eski yanlış adlar yeniden tarama gerektirmeden düzeliyor.
+
+## [1.3.1] — 2026-09-25 (Chrome eklentisi)
+
+- 2.0.3'teki üç düzeltme (kulüp adı sözlüğü, ada göre kulüp karşılaştırması, adların güncel sözlükten çözülmesi) MV3 eklentisine de uygulandı: `lib/players.js`, `popup.js`, `background.js` (`META_V` 3).
+
 ## [2.0.2] — 2026-09-23
 
 ### Eklendi
