@@ -12,9 +12,13 @@ const PANEL_ID = 'fcg-panel';
 let lastKey = '';
 let lastWrite = 0;
 
+// Yalnız EA'nın UT sunucusu adresi kabul edilir (sayfa içinden gelen mesaj doğrulanmadan saklanmasın)
+const validBase = (u) => /^https:\/\/[a-z0-9.-]+\.ea\.com(:\d+)?\/ut\/game\/[^/?#]+$/i.test(String(u || ''));
+
 function onSessionMessage(payload) {
-  const { sid, headers, baseUrl } = payload || {};
-  if (!sid) return;
+  const { sid, headers } = payload || {};
+  const baseUrl = validBase(payload?.baseUrl) ? payload.baseUrl : null;
+  if (!sid || typeof sid !== 'string') return;
   const key = JSON.stringify([sid, headers, baseUrl]);
   if (key === lastKey && Date.now() - lastWrite < 60000) return;
   lastKey = key;
@@ -128,13 +132,13 @@ function syncActive() {
 }
 
 function openExternal() {
-  try { chrome.runtime.sendMessage({ type: 'openPanelTab' }); } catch (_) {}
+  try { chrome.runtime.sendMessage({ type: 'openGalleryTab' }); } catch (_) {}
 }
 
 function getPanel() {
   let p = document.getElementById(PANEL_ID);
   if (p) return p;
-  const frame = h('iframe', { class: 'fcg-frame', title: 'Gallery Grab' });
+  const frame = h('iframe', { class: 'fcg-frame', title: 'Gallery Grab', allow: 'clipboard-write' });
   const fallback = h('div', { class: 'fcg-fallback', hidden: true }, [
     h('p', { text: 'Panel bu sayfada gömülü açılamadı (sayfa güvenlik politikası engelliyor olabilir).' }),
     h('button', { class: 'fcg-btn fcg-btn-primary', text: 'Paneli yeni sekmede aç', onclick: openExternal }),
@@ -153,7 +157,7 @@ function getPanel() {
 function loadFrame(p) {
   if (iframeLoaded) return;
   iframeLoaded = true;
-  p.querySelector('.fcg-frame').src = chrome.runtime.getURL('popup.html?embedded=1');
+  p.querySelector('.fcg-frame').src = chrome.runtime.getURL('gallery.html?embedded=1');
   clearTimeout(readyTimer);
   readyTimer = setTimeout(() => { p.querySelector('.fcg-fallback').hidden = false; }, 5000);
 }

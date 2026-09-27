@@ -210,9 +210,17 @@ $('scanClub').addEventListener('click', () => send({ type: 'scanClub' }));
 $('retry').addEventListener('click', () => send({ type: 'retry' }));
 $('resetSpent').addEventListener('click', () => send({ type: 'resetSpent' }));
 $('clear').addEventListener('click', () => send({ type: 'clear' }));
+$('toGallery').addEventListener('click', () => {
+  if (document.body.classList.contains('embedded')) location.href = 'gallery.html?embedded=1';
+  else send({ type: 'openGalleryTab' });
+});
 
 chrome.storage.onChanged.addListener((c, area) => {
   if (area === 'local' && (c.galleryList || c.gallerySettings || c.galleryRun || c.clubBaseIds || c.galleryMeta)) render();
 });
 render();
 send({ type: 'refreshCoins' }).catch(() => {});
+$('contact').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText('yusuflnx'); $('contact').textContent = 'Kopyalandı ✓'; } catch (_) { $('contact').textContent = 'Discord: yusuflnx'; }
+  setTimeout(() => { $('contact').textContent = '💬 Discord yusuflnx'; }, 1800);
+});

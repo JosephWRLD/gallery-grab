@@ -1,81 +1,73 @@
-# Gallery Grab — Kod Analizi (v1.2.0)
+# Gallery Grab — Kod Analizi (eklenti v1.4.0 · userscript v2.1.0)
 
-Tarih: 2026-09-22. Kapsam: tüm kaynak dosyalar.
+Tarih: 2026-09-27. Kapsam: tüm kaynak dosyalar, katalog verisi, katalog üretimi ve GitHub Actions.
 
 ## 1. Mimari
 
-Altyapı Kangal Snip ile aynı:
-- `inject.js` oturumu yakalar.
-- `content.js` oturumu depoya yazar, keepalive sağlar ve menü sekmesini ekler.
-- `lib/ea-api.js` istekleri Web App sekmesinin içinde `fetch` ile çalıştırır.
-
-Kangal'dan farkı: tek amaçlı, durumu az, satış ve listeleme yok.
-
 ```
-popup  ── add / bulkAdd / start / stop ──►  background.js
-                                             runLoop: sıradaki "pending" oyuncu
-                                               └─ buyOne
-                                                    ├─ findCheapest: maxb kademeli ≤5 arama
-                                                    ├─ bütçe / coin kontrolü
-                                                    └─ PUT /trade/{id}/bid  (460/461 → ≤3 tekrar)
-                                             handleError: ciddi hatada tüm döngü durur
+EA Web App sekmesi (www.ea.com/.../web-app)
+ ├─ inject.js (MAIN)      UT isteklerinden X-UT-SID / adres yakalar → postMessage; pazar rozeti (UTPlayerItemView yaması)
+ ├─ content.js (izole)    oturumu storage'a yazar (adres doğrulamalı), keepalive, sol menü sekmesi + gömülü panel (iframe)
+ └─ sayfa bağlamında çalıştırılanlar (chrome.scripting, world MAIN)
+      ├─ lib/gallery-api.js  services.Item.searchConceptItems → set kartları (isCollected, gradingScore)
+      └─ lib/ea-api.js       UT API: transfermarket, bid, item, auctionhouse, tradepile, credits (gönderim anındaki SID ile)
+
+background.js (service worker)  görevler: eşitleme, canlı fiyat, alım (sınır / bütçe / transfer listesi), satışa koyma,
+                                oyuncu listesi; tek görev belirteci (token) + stop(my)
+gallery.html / gallery.js       Galeri ekranı (iframe ya da ayrı sekme); chrome.storage üzerinden durum
+lib/gallery.js                  saf hesaplar (puan/not, fut.gg planı, fiyat sınırı, planlayıcı, sıralama)
+lib/i18n.js                     TR / EN sözlük
+lib/catalog.js                  gömülü katalog + GitHub'dan günlük güncelleme
+data/gallery-sets.json          126 set: filtre (takım / lig / nadirlik), eşikler, ödüller, fut.gg çözümleri + tarih
+
+userscript/gallery-grab.user.js aynı işlevler tek dosyada; lib/i18n.js + lib/gallery.js tools/build-userscript.mjs ile gömülü
+tools/build-gallery-sets.mjs    fut.gg SSR verisinden katalog (düzenli ifade; kod çalıştırmadan)
+.github/workflows               gallery-sets.yml (her gün 18:00 UTC = 21:00 TR), ci.yml (sözdizimi + testler + userscript)
 ```
 
-**Depolama anahtarları:**
-- `galleryList`: `{id, baseId, name, rating, status, price, note}`
-- `gallerySettings`: `{budget}`
-- `galleryRun`: `{running, spent, coins, text, level}`
-- `session`
+**Veri kaynakları:** toplanma durumu ve kart puanı EA'dan (konsept araması), set tanımları ve önerilen çözümler fut.gg'den, pazar fiyatı EA transfer pazarından.
 
-**Service worker yeniden başlarsa:** Çalışma "durdu" olarak işaretlenir ve kendiliğinden devam etmez. Bu bilinçli, güvenli tarafta kalmak için.
+## 2. Doğrulanan davranışlar
+- Set puanı = toplanan kartların en yüksek `gereken` tanesinin `gradingScore` toplamı. FUTGenie ile birebir aynı: Arsenal 18/20 · 64.851, Birmingham 15/15 · 820 · A, Chelsea 12/20 · 10.553, Coventry 1/15 · 35.
+- Transfer pazarı sonuçları da `isCollected` taşıyor; rozet bunu kullanıyor.
+- Fiyat araması: bulunan en ucuzdan bir basamak aşağısıyla (`maxb`) yeniden aranır, en fazla 5 arama. Özel sürümler `minb` ile bulunur (Undav TOTW 88.500 → 86.000 bulundu).
+- FC 27'de güncel UT oturumu `services.Authentication.utasSession.id`.
+- Katalog: eşikler artan, tier tokenları kümülatif, çözüm kart sayıları ≤ gereken, bir takım yalnız bir sette.
 
-## 2. İstek maliyeti
+## 3. 2026-09-27 analizinde bulunup düzeltilenler
+| Önem | Sorun | Düzeltme |
+|---|---|---|
+| Yüksek | Alımda fiyat üst sınırı yoktu (planlayıcı canlı fiyata bakmadan alabiliyordu) | Kart başına sınır: canlı × 1,25 / fut.gg × 2 (+2.000) + "Kart başına en fazla" |
+| Yüksek | Holografik / Başlangıç setleri boş listeyle "eşitlenip" 1,6 M coin'lik alıma açılabiliyordu | Bu setlerde eşitleme / alım / planlama kapalı, eski kayıtlar siliniyor |
+| Yüksek | Durdur → yeni görev: eski görevin bitişi yeni görevi durdurabiliyordu | `stop(text, level, my)` |
+| Yüksek | Transfer listesi dolunca plan sessizce devam ediyordu | Doluluk izleniyor, 100'de duruyor |
+| Orta | Görev hatası "çalışıyor"da takılı bırakıyordu | Görevler hata yakalayıcıyla başlatılıyor |
+| Orta | Tek zaman aşımı tüm eşitlemeyi kesiyordu | Bir kez tekrar, sonra atla; art arda 3 hatada dur |
+| Orta | Eşitlemede sayfa sekmelere zıplıyordu; kart listesi kapanıyordu | Yalnız sekme değişince yatay kaydırma; açık durum hatırlanıyor |
+| Orta | Katalog indirme hatasında bir gün bekleniyordu | 1 saat sonra yeniden deneme; gömülü kopya bellekte |
+| Orta | Bilinmeyen kategorideki set kulüp seti sanılabiliyordu | Kulüp filtresi yalnız 5 lig kategorisinde; bilinmeyende nadirlik tespiti ya da "desteklenmiyor"; yeni set uyarısı |
+| Orta | Bayat fiyat sessiz kalıyordu | Set başına `sol.at`, 2 günden eskiyse uyarı; çözümlerin çoğu okunamazsa build başarısız |
+| Orta | Galeri ve oyuncu listesi aynı bütçe sayısını farklı sayaçla ölçüyordu | Ayrı galeri bütçesi |
+| Orta | Görseller Oyuncu Ara açılmadan gelmiyordu | Herhangi bir kart görselinden görsel kökü |
+| Orta | Userscript panel kapalıyken de her durumda tüm DOM'u çiziyordu; eklentiyle aynı DOM kimlikleri | Çizim birleştirme, kapalıyken çizmeme, odak koruması; `fcgu-` kimlikleri + uyarı |
+| Orta | Token için oyunda notlandırma gerektiği söylenmiyordu | "Oyunda notlandır" rozeti, üst şerit kutusu, filtre, "✓ Notlandırdım" |
+| Düşük | Sayfadan gelen UT adresi doğrulanmıyordu; izinler genişti | `*.ea.com/ut/game/` doğrulaması; `host_permissions` daraltıldı |
+| Düşük | Gömülü panelde panoya kopyalama; EN modda Türkçe kalan metinler; `fmtDur` saat; fiyat kayıtları büyüyordu | Düzeltildi |
 
-- Oyuncu başına: 1–5 arama + 1 alım (+ en fazla 3 tekrar).
-- Aramalar arası bekleme 0,4–0,9 sn, oyuncular arası 1–2,5 sn.
-- 50 oyuncuda ≈150–300 istek, birkaç dakikada. Dakikada 60+ isteğe çıkabilir.
+## 4. Bilinen sınırlar
+- **Bonus etiketleri yok:** not/puan ham puandır. Oyundaki not (aynı kulüp, ilk sahip +%500 …) daha yüksek olabilir. fut.gg çözümleri bonuslarla hesaplanmıştır, bu yüzden "Puan (çözüm / hedef)" hedefin altında görünebilir.
+- **Notlandırma oyunda:** Web App notlandıramaz; "Notlandırdım" işareti kullanıcıya bırakılır.
+- **Galeri seviyesi** Web App verisinde yok, elle giriliyor.
+- **fut.gg çözümleri kişiselleştirilmemiş:** sıfırdan hesaplanıyor. Sende güçlü kartlar varsa daha az kartla aynı nota ulaşılabilir.
+- **Doğrulanmamış:**
+  - alınan kartın anında `isCollected` olması (alım sonrası eşitleme kontrol ediyor);
+  - 401'de Web App'i dürtmenin yeniden girişi tetiklemesi;
+  - konsept aramasının tüm sürümleri döndürmesi;
+  - EA'nın unassigned sınırı.
+- **Katalog kaynağı:** fut.gg sayfa yapısı ya da erişim politikası değişirse günlük iş başarısız olur (dosya yazılmaz, son katalog kullanılmaya devam eder).
 
-## 3. Güçlü yanlar
-
-- Kapsam dar ve anlaşılır. Kart unassigned'da kalır, satış mantığı yok, karmaşa yok.
-- Ciddi hatada (captcha, 429, 471, 494, softban, 401) tüm döngü duruyor, devam etmiyor.
-- Bütçe ve coin kontrolü her alımdan önce yapılıyor.
-- `token` ile durdurma anında etkili. Yarım kalan alım sonrası döngü bitiyor.
-- Arayüzde `textContent` kullanılıyor, `innerHTML` yok (XSS yok).
-
-## 4. Bulgular
-
-| # | Önem | Yer | Bulgu | Öneri |
-|---|---|---|---|---|
-| G1 | **Yüksek** | `background.js:84,168` | Hız sınırı ve insan benzeri bekleme yok. Aramalar arası 0,4–0,9 sn çok agresif. Uzun listede captcha ya da softban riski yüksek. Kangal'daki saatlik limit, mola ve log-normal bekleme burada yok. | Oyuncular arası 4–10 sn, aramalar arası 1,5–3 sn bekleme; saatlik istek limiti (ör. 300); her ~30 oyuncuda mola. |
-| G2 | Orta | `lib/ea-api.js` `search`, `findCheapest` | `minb` rastgeleleştirilmiyor. EA aynı URL'ye önbellekli sonuç dönebiliyor, bu da satılmış ilanların gelmesine ve 460/461 tekrarlarına yol açıyor. | Kangal'daki `jitterMinBin` mantığını ekle. |
-| G3 | Orta (doğrulanmadı) | `background.js` `buyOne` | Alınan kartlar unassigned'da birikiyor. EA'nın unassigned sınırı dolarsa sonraki her alım hata verir ve her oyuncu için boşuna istek harcanır. Tüm döngü durmuyor. | Sınır hatasını (kod gerçek testte belirlenecek) ciddi hata listesine ekle ya da art arda N alım hatasında dur. |
-| G4 | Orta | `background.js:57` `bulkAdd` | Toplu eklemede isim başına ilk eşleşme alınıyor. Ortak isimlerde (ör. "Silva", "Rodrygo") yanlış oyuncu eklenebilir. | Tam eşleşme yoksa "belirsiz" diye işaretle ve kullanıcıya seçtir. |
-| G5 | Düşük | `background.js` | İşlem günlüğü ve istek sayacı yok. Hata olunca yalnız son durum metni ve oyuncu notu kalıyor. | Kangal'daki `log()` ve `recordRequest()` taşınabilir. |
-| G6 | Düşük | `background.js:98` | Bütçe kontrolü `run.spent` ile yapılıyor ama "Harcananı sıfırla" çalışma sırasında basılırsa bütçe fiilen yeniden açılıyor. | Çalışırken bu düğmeyi devre dışı bırak. |
-| G7 | Bilgi | `background.js:231` | SW yeniden başlayınca çalışma otomatik devam etmiyor. Uzun listede Chrome SW'yi kapatırsa kullanıcı yeniden başlatmalı. | Bilinçli tercih, belgelendi. |
-
-## 5. Doğrulanmamış varsayımlar
-
-**2026-09-23 keşfi ile doğrulananlar** (Web App'te çalıştırılan teşhis çıktısı):
-- `players.json` = `{ LegendsPlayers, Players }`; kayıt alanları yalnız `c/f/l/id/r` — **kulüp, lig, ülke, mevki YOK** (19.898 oyuncu + 136 ikon). Bu bilgi ancak item verisinden (`teamid`, `leagueId`, `nation`, `preferredPosition`) gelir.
-- Görsel kökü: `<content>/<yıl>/fut/items/images/mobile` → `portraits/<baseId>.png`, `clubs/{light,dark}/<teamId>.png`, `leagues/{light,dark}/<leagueId>.png`, `flags/dark/<nationId>.png`.
-- `teamconfig.json` **isim içermiyor**: `Years[0].Teams` = `[{TeamId, LeagueId}, …]`, yalnız takım→lig eşlemesi.
-- id→isim sözlükleri Web App'in yerelleştirme dosyalarında: `<content>/<yıl>/fut/loc/companion/futweb/{cdn,preload}/<dil>.json`. Anahtarlar `…team…<id>` / `…league…<id>` / `…nation…<id>` biçiminde; `lib/players.js` sayfanın indirdiği loc dosyalarını tarayıp bu kalıpla eşliyor (2026-09-23 ölçümü: 2584 kulüp, 151 lig, 218 ülke).
-- Web App bundle'ı obfuscated; endpoint şablonları statik olarak çıkarılamıyor.
-
-**Hâlâ doğrulanmamış:**
-- `GET /club?start&count&sort&sortBy&type=player` **çalıştı** (2026-09-23, 47 kart) ama tam sayfalama davranışı büyük kulüpte test edilmedi.
-- Kulüp yanıtında sahip olunan oyuncunun base id'si = `itemData.assetId` (endpoint 2026-09-23'te çalıştı, alan eşlemesi tek tek doğrulanmadı).
-- Kulüp yanıtındaki toplam alan adı (`totalResults` / `total` / `count`) — sayfalama üçünü de deniyor, hiçbiri yoksa sayfa boşalınca durur.
-- Yerelleştirme anahtar kalıbı sürüm değişince kayabilir; sözlük boş kalırsa panelde sebep + örnek anahtarlar gösteriliyor.
-
-- `players.json` alan adları ve `maskedDefId` = base id. Arama ve alımın çalıştığı kullanıcı tarafından doğrulandı, ama alan eşlemesi her oyuncu için test edilmedi.
-- Alım yanıtında coin alanı (`parseCoins(r)`).
-- EA'nın unassigned havuzu sınırı ve dolunca döndüğü hata kodu.
-
-## 6. Kangal Snip ile ilişki
-
-- Kod tabanı ortak: `inject.js`, `content.js`, `lib/ea-api.js` ve oyuncu araması neredeyse aynı.
-- Menü sekmesi: Gallery Grab kendi sekmesini her zaman en alta taşır, Kangal sırayı zorlamaz. Bu sayede ikisi aynı anda yüklüyken DOM döngüsü oluşmaz.
-- Panel kapanma: Kangal sekmesine ya da `#fc27-dock`'a tıklanınca Galeri paneli kapanır.
+## 5. Sonraki adımlar (önerilen, bu sürümde yok)
+- **Bonus etiket motoru:** fut.gg set sayfalarındaki `tags` (tiers + rules) kataloğa eklenir; kartlara ülke / seviye / pozisyon eklenir; not tahmini oyuna yaklaşır.
+- **Kişiselleştirilmiş en ucuz yol:** bonus motoruna bağlı.
+- **Kod tekrarı:** eklenti ve userscript'te görev ve arayüz kodu tekrar ediyor. Ortak modül + bundler (esbuild) ile tek kaynaktan iki çıktı.
+- **Katalog geçmişi:** günlük katalog commit'leri main'i büyütür; ileride ayrı bir `catalog` dalı ya da Release varlığı.

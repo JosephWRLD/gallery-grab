@@ -50,10 +50,42 @@
   // fetch bilinçli olarak sarılmıyor: Web App UT isteklerini XHR ile yapar. fetch sarılınca sayfanın
   // kendi düşen istekleri (reklam engelleyici vb.) "Failed to fetch" olarak eklentinin hatalarına yazılıyordu.
 
+  // Transfer pazarı rozeti: EA her ilan kartında isCollected taşıyor (galeride zaten toplanmış kart).
+  // UTPlayerItemView.renderItem sarılır; görünümler yeniden kullanıldığı için rozet her çizimde güncellenir.
+  const BADGE = 'fcg-collected';
+  const patchBadge = () => {
+    const V = window.UTPlayerItemView;
+    if (!V?.prototype?.renderItem || V.prototype.__fcgBadge) return !!V?.prototype?.__fcgBadge;
+    const orig = V.prototype.renderItem;
+    V.prototype.renderItem = function (item, ...rest) {
+      const r = orig.call(this, item, ...rest);
+      try {
+        const root = this.getRootElement?.();
+        if (root) {
+          const show = item?.isCollected === true && !!item?._auction?.tradeId;
+          let b = root.querySelector(':scope > .' + BADGE);
+          if (show && !b) {
+            b = document.createElement('div');
+            b.className = BADGE;
+            const sp = document.createElement('span');   // küçük kartta CSS yalnız ✓ gösterir
+            sp.textContent = '✓ Galeride';
+            b.appendChild(sp);
+            b.title = 'Gallery Grab: bu kart galeride zaten toplandı';
+            root.appendChild(b);
+          } else if (!show && b) b.remove();
+        }
+      } catch (_) {}
+      return r;
+    };
+    V.prototype.__fcgBadge = true;
+    return true;
+  };
+  const badgeTimer = setInterval(() => { if (patchBadge()) clearInterval(badgeTimer); }, 1000);
+
   // Yedek: Web App'in kendi servis nesnesinden SID oku
   setInterval(() => {
     try {
-      const id = window.services && window.services.Authentication && window.services.Authentication.sessionUtas && window.services.Authentication.sessionUtas.id;
+      const id = (window.services?.Authentication?.utasSession?.id || window.services?.Authentication?.getUtasSession?.()?.id || window.services?.Authentication?.sessionUtas?.id || null);   // FC 27: utasSession
       if (!state.baseUrl) {
         for (const e of performance.getEntriesByType('resource')) { const b = baseFrom(e.name); if (b) { state.baseUrl = b; lastSent = ''; } }
       }

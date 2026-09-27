@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Sözdizimi
+        run: |
+          for f in $(git ls-files '*.js' '*.mjs'); do
+            node --check "$f" || exit 1
+          done
+      - name: Birim testleri
+        run: node --test tests/*.test.mjs
+      - name: Userscript'teki gömülü lib güncel mi
+        run: |
+          node tools/build-userscript.mjs
+          git diff --exit-code -- userscript/ || { echo "::error::lib değişti ama userscript yeniden üretilmedi: node tools/build-userscript.mjs"; exit 1; }

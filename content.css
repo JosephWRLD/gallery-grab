@@ -118,3 +118,11 @@
 @media (max-width: 600px) {
   .fcg-panel { left: 0; }
 }
+
+/* Transfer pazarı: galeride zaten toplanmış kart rozeti (inject.js) */
+.fcg-collected { position:absolute; left:50%; bottom:2px; transform:translateX(-50%); z-index:5; pointer-events:auto;
+  background:rgba(8,40,26,.92); color:#2fd08a; border:1px solid rgba(47,208,138,.7); border-radius:999px;
+  font:700 10px/1.5 system-ui, "Segoe UI", sans-serif; padding:0 7px; white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,.4); }
+.small > .fcg-collected { font-size:9px; padding:0 4px; bottom:1px; }
+.small > .fcg-collected::before { content:'✓'; }
+.small > .fcg-collected span { display:none; }
