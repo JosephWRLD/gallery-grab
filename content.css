@@ -33,26 +33,6 @@
 .fcg-tab.fcg-active { background: rgba(47, 208, 138, 0.16) !important; box-shadow: inset 3px 0 0 #2fd08a; }
 .fcg-tab.fcg-active .fcg-lbl { color: #2fd08a; }
 
-/* ---------- Menü bulunamazsa yüzen buton (Kangal Snip'inkinin altında) ---------- */
-.fcg-dock {
-  position: fixed;
-  left: 6px;
-  top: calc(45% + 50px);
-  z-index: 2147483001;
-  width: 42px;
-  height: 42px;
-  padding: 0;
-  border: 1px solid #2a2f3a;
-  border-radius: 10px;
-  background: #181b22;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
-}
-.fcg-dock.fcg-active { border-color: #2fd08a; }
-
 /* ---------- Ana ekran paneli ---------- */
 .fcg-panel {
   position: fixed;

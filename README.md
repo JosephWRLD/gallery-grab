@@ -1,6 +1,6 @@
 # Gallery Grab
 
-FC 27 Ultimate Team Web App için **FUT Galeri** aracı: Web App'te olmayan Galeri'yi sol menüye ekler, setlerin durumunu EA'dan okur, fut.gg'nin en ucuz çözümlerini gösterir ve eksik kartları güncel pazar fiyatından alır. İki sürümü var: **Chrome eklentisi** (v1.4.0) ve **Tampermonkey kullanıcı scripti** (v2.1.0). İkisi aynı hesap kodunu kullanır; **ikisini birlikte kurma**.
+FC 27 Ultimate Team Web App için **FUT Galeri** aracı: Web App'te olmayan Galeri'yi sol menüye ekler, setlerin durumunu EA'dan okur, fut.gg'nin en ucuz çözümlerini gösterir ve eksik kartları güncel pazar fiyatından alır. İki sürümü var: **Chrome eklentisi** (v1.4.1) ve **Tampermonkey kullanıcı scripti** (v2.1.1). İkisi aynı hesap kodunu kullanır; **ikisini birlikte kurma**.
 
 > **Uyarı:** Web App'te otomatik alım yapmak EA kullanım şartlarına aykırıdır ve hesabın kısıtlanmasına ya da kalıcı yasaklanmasına yol açabilir. Proje ücretsizdir, satılmaz, EA ile hiçbir bağlantısı yoktur ve garanti verilmez. Kullanım riski tamamen kullanıcıya aittir — ayrıntılar: [Sorumluluk reddi](#sorumluluk-reddi-ve-yasal-notlar).
 
@@ -55,7 +55,7 @@ Galeri ekranının sağ üstündeki "Oyuncu listesi" bağlantısıyla açılır.
 1. `chrome://extensions` sayfasını aç, **Geliştirici modu**'nu etkinleştir.
 2. **Paketlenmemiş öğe yükle** ile bu klasörü seç.
 3. EA FC Web App'i aç ve giriş yap.
-4. Sol menüdeki **GALLERY** sekmesiyle Galeri'yi aç. Sıra: **Tümünü eşitle** → bir sete tıkla → not sekmesini seç → **Eşitle + güncel fiyat** → **Bu çözümü al**.
+4. Oyun açılınca (giriş yapıp ana ekran yüklendikten sonra) sol menünün en altında **GALLERY** sekmesi görünür; onunla Galeri'yi aç. Sıra: **Tümünü eşitle** → bir sete tıkla → not sekmesini seç → **Eşitle + güncel fiyat** → **Bu çözümü al**.
 
 ## Kurulum — Tampermonkey
 
@@ -75,7 +75,7 @@ Güncellemeler Tampermonkey tarafından kendiliğinden kontrol edilir. Katalog G
 
 | Dosya | Görev |
 |---|---|
-| `manifest.json` | MV3 tanımı (eklenti v1.4.0) |
+| `manifest.json` | MV3 tanımı (eklenti v1.4.1) |
 | `inject.js` | Sayfa bağlamı: UT isteklerinden oturumu yakalar, pazar rozetini ekler |
 | `content.js` / `content.css` | Oturumu depoya yazar (adres doğrulamalı), keepalive, sol menü sekmesi ve gömülü panel |
 | `background.js` | Görevler: eşitleme, canlı fiyat, alım (fiyat sınırı, bütçe, transfer listesi), satışa koyma, oyuncu listesi |
@@ -88,7 +88,7 @@ Güncellemeler Tampermonkey tarafından kendiliğinden kontrol edilir. Katalog G
 | `lib/catalog.js` | Katalog yükleme ve günlük GitHub güncellemesi |
 | `lib/players.js`, `lib/img.js`, `lib/pricing.js` | Oyuncu arama + isim sözlükleri, görsel adresleri, fiyat basamakları |
 | `data/gallery-sets.json` | Set kataloğu (126 set, fut.gg çözümleri ve fiyat tarihleriyle) |
-| `userscript/gallery-grab.user.js` | Tampermonkey sürümü (v2.1.0) |
+| `userscript/gallery-grab.user.js` | Tampermonkey sürümü (v2.1.1) |
 | `tools/`, `tests/`, `.github/workflows/` | Katalog/userscript üretimi, testler, günlük katalog işi ve CI |
 
 Kod analizi ve bilinen sınırlar: [ANALIZ.md](ANALIZ.md)

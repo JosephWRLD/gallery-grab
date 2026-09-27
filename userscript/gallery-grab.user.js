@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gallery Grab
 // @namespace    https://github.com/JosephWRLD/gallery-grab
-// @version      2.1.0
+// @version      2.1.1
 // @description  FC Web App: FUT Galeri setleri, notlar, fut.gg çözümleri, token planlayıcı ve eksik kartları alma; oyuncu listesinden en ucuz kart alma
 // @author       JosephWRLD — Discord: yusuflnx
 // @license      PolyForm-Noncommercial-1.0.0 (ticari kullanım/satış yasak)
@@ -2060,7 +2060,7 @@
     const sel = (opts, val, on) => { const s = h('select', { onchange: (e) => on(e.target.value) }, opts.map(([k, x]) => h('option', { value: k, text: x }))); s.value = val; return s; };
 
     // Chrome eklentisi de yüklüyse (aynı sayfada kendi menü sekmesi var) uyar
-    const extOn = !!document.getElementById('fcg-tab') || !!document.getElementById('fcg-dock');
+    const extOn = !!document.getElementById('fcg-tab');
     g.body.replaceChildren(
       extOn ? h('div', { class: 'unsup', text: L('us.extWarn') }) : null,
       h('div', { class: 'introw' }, [
@@ -2378,7 +2378,7 @@
 #fcgu-panel .missing { color:var(--err); font-size:12px; margin-top:4px; }
 #fcgu-panel .fcg-foot { display:flex; align-items:center; gap:8px; padding:10px 0 0; color:#8b93a3; font-size:12px; border-bottom:0; }
 #fcgu-panel .fcg-foot b { color:#2fd08a; font-family:ui-monospace, Consolas, monospace; }
-/* ---------- Sol menü sekmesi + yüzen buton ---------- */
+/* ---------- Sol menü sekmesi ---------- */
 .fcg-tab { display:flex !important; flex-direction:column; align-items:center; justify-content:center; gap:3px; cursor:pointer; position:relative; }
 .fcg-tab::before, .fcg-tab::after { content:none !important; }
 .fcg-icon { width:34px; height:34px; padding:3px; box-sizing:border-box; color:#2fd08a; flex:none; pointer-events:none; }
@@ -2386,10 +2386,6 @@
 .fcg-tab:hover .fcg-icon { filter:brightness(1.2); }
 .fcg-tab.fcg-active { background:rgba(47,208,138,.16) !important; box-shadow:inset 3px 0 0 #2fd08a; }
 .fcg-tab.fcg-active .fcg-lbl { color:#2fd08a; }
-.fcg-dock { position:fixed; left:6px; top:calc(45% + 50px); z-index:2147483001; width:42px; height:42px; padding:0;
-  border:1px solid #2a2f3a; border-radius:10px; background:#181b22; display:flex; align-items:center; justify-content:center;
-  cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.45); }
-.fcg-dock.fcg-active { border-color:#2fd08a; }
 @media (max-width:600px) { #fcgu-panel { left:0; } }
 /* ---------- görünüm sekmeleri ---------- */
 #fcgu-panel .fcg-views { display:flex; gap:4px; margin-left:10px; }
@@ -2518,7 +2514,6 @@
   // ---------------------------------------------------------------- panel arayüzü
   // Chrome eklentisi #fcg-tab / #fcgu-panel kullanıyor: ikisi birlikte kuruluysa karışmasın diye ayrı kimlikler
   const TAB_ID = 'fcgu-tab';
-  const DOCK_ID = 'fcgu-dock';
   const PANEL_ID = 'fcgu-panel';
   const NAV_SELECTORS = ['nav.ut-tab-bar', '.ut-tab-bar', '.ut-tab-bar-view', 'nav[class*="tab-bar"]'];
   let panelOpen = false;
@@ -2808,28 +2803,32 @@
     return el;
   }
 
+  // Sekme yalnız oyun açıkken (sol menü varken) görünür; giriş / yükleme ekranında hiçbir şey eklenmez.
+  let navLostAt = 0;
   function ensureEntry() {
     const nav = findNav();
-    let tab = document.getElementById(TAB_ID);
-    if (nav) {
-      document.getElementById(DOCK_ID)?.remove();
-      const sample = nav.querySelector(`.ut-tab-bar-item:not(#${TAB_ID}):not(#fcg-tab):not([id^="fc27-"])`);
-      const host = sample ? sample.parentElement : nav;
-      if (tab && tab.parentElement !== host) { tab.remove(); tab = null; }
-      if (!tab) tab = buildTabItem(sample);
-      // Her zaman menünün en altında (Kangal Snip'in sekmesinin de altında)
-      if (host.lastElementChild !== tab) host.append(tab);
-    } else if (!tab && !document.getElementById(DOCK_ID) && document.body) {
-      const d = h('button', { id: DOCK_ID, class: 'fcg-dock', title: 'Gallery Grab' });
-      d.append(galleryIcon());
-      document.body.append(d);
+    if (!nav) {
+      // Oyun menüsü yok (giriş / yükleme ekranı ya da oturum kapandı): açık panel de kapansın.
+      // Menü yeniden çizilirken bir anlığına kaybolabilir; 1,5 sn yoksa kapat.
+      if (panelOpen) {
+        navLostAt ||= Date.now();
+        if (Date.now() - navLostAt > 1500) setOpen(false); else scheduleEnsure();
+      }
+      return;
     }
+    navLostAt = 0;
+    let tab = document.getElementById(TAB_ID);
+    const sample = nav.querySelector(`.ut-tab-bar-item:not(#${TAB_ID}):not(#fcg-tab):not([id^="fc27-"])`);
+    const host = sample ? sample.parentElement : nav;
+    if (tab && tab.parentElement !== host) { tab.remove(); tab = null; }
+    if (!tab) tab = buildTabItem(sample);
+    // Her zaman menünün en altında (Kangal Snip'in sekmesinin de altında)
+    if (host.lastElementChild !== tab) host.append(tab);
     syncActive();
   }
 
   function syncActive() {
-    [document.getElementById(TAB_ID), document.getElementById(DOCK_ID)].filter(Boolean)
-      .forEach((e) => e.classList.toggle('fcg-active', panelOpen));
+    document.getElementById(TAB_ID)?.classList.toggle('fcg-active', panelOpen);
   }
 
   function position() {
@@ -2843,7 +2842,7 @@
       if (r.height >= r.width) left = Math.round(r.right);                  // dikey sol menü
       else if (r.top < window.innerHeight / 2) top = Math.round(r.bottom);  // üstte yatay menü
       else bottom = Math.round(window.innerHeight - r.top);                 // altta yatay menü
-    } else if (document.getElementById(DOCK_ID)) left = 52;
+    }
     p.style.setProperty('--fcg-left', `${left}px`);
     p.style.setProperty('--fcg-top', `${top}px`);
     p.style.setProperty('--fcg-bottom', `${bottom}px`);
@@ -2861,7 +2860,7 @@
   document.addEventListener('click', (e) => {
     const t = e.target;
     if (!(t instanceof Element)) return;
-    if (t.closest(`#${TAB_ID}, #${DOCK_ID}`)) {
+    if (t.closest(`#${TAB_ID}`)) {
       e.preventDefault();
       e.stopPropagation();
       setOpen(!panelOpen);
@@ -2869,7 +2868,7 @@
     }
     if (t.closest(`#${PANEL_ID}`)) return;
     // Başka bir menü sekmesine (EA'nın ya da Kangal Snip'in) geçilirse paneli kapat
-    if (panelOpen && t.closest('.ut-tab-bar-item, .ut-tab-bar button, nav[class*="tab-bar"] button, #fc27-dock')) setOpen(false);
+    if (panelOpen && t.closest('.ut-tab-bar-item, .ut-tab-bar button, nav[class*="tab-bar"] button')) setOpen(false);
   }, true);
 
   document.addEventListener('keydown', (e) => {
