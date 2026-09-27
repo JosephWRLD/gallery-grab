@@ -5,6 +5,52 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [2.1.0] — 2026-09-27 (userscript)
+
+- Chrome eklentisi 1.4.0'daki **Galeri ekranının tamamı** userscript'e taşındı (aşağıdaki 1.4.0 maddelerinin hepsi); panelde "GALERİ | OYUNCU LİSTESİ" sekmeleri.
+- Hesaplar ve dil sözlüğü `lib/gallery.js` + `lib/i18n.js`'ten `tools/build-userscript.mjs` ile gömülüyor; iki sürüm aynı kodu kullanıyor, CI güncelliğini denetliyor.
+- Katalog GitHub'dan indiriliyor (yeni izinler: `@grant GM_xmlhttpRequest`, `@connect raw.githubusercontent.com`).
+- Chrome eklentisiyle çakışmasın diye DOM kimlikleri ayrıldı (`#fcgu-tab`, `#fcgu-panel`); eklenti de yüklüyse panelde uyarı çıkıyor.
+- EA sayfasını yormamak için panel kapalıyken çizim yapılmıyor, çizimler kareye bir kez birleştiriliyor; bir kutuya yazarken yeniden çizim bekliyor.
+
+## [1.4.0] — 2026-09-27 (Chrome eklentisi)
+
+### Eklendi — Galeri ekranı
+- GALLERY sekmesi artık **FUT Galeri**'yi gösteriyor: lig sekmeleri, 126 set kartı (toplanan/gereken, set puanı, D·C·B·A·S notu; alt alta sonraki token, kazanılan, şu an alınabilen token ve puan, en fazla token).
+- **Toplanma durumu EA'dan:** Web App'in konsept araması her kart için `isCollected` ve `gradingScore` veriyor; set puanı = toplananların en yüksek `gereken` tanesinin puan toplamı (FUTGenie ile birebir: Arsenal 18/20 · 64.851, Birmingham 15/15 · 820 · A).
+- **Tümünü eşitle:** "N set, ~X dk" onay penceresi (ölçülen istek süresinden tahmin), kalan süreli ilerleme, "son 6 saatte eşitlenenleri atla". Tek bir set hata verirse bir kez daha denenir, olmazsa atlanır; art arda 3 set düşerse durur.
+- **Set detayı:** fut.gg'nin her not için önerdiği en ucuz çözüm (gereken coin, toplam fiyat, vergi kaybı, puan (çözüm / hedef), token, kartlar); sende olan kartlar ✓ ile düşülür; kartlarda galeri puanı ("+410 puan"). Tümü/Eksik/Toplanan filtresi; setteki tüm kartların listesi.
+- **Eşitle + güncel fiyat:** eksik kartların pazardaki güncel fiyatı (sarı), fut.gg fiyatı (soluk), ilanı olmayan (kırmızı); durum satırında arama izi ("800 bulundu · 750 ve altında ilan yok").
+- **Bu çözümü al / Planı al:** eksik kartları güncel pazar fiyatından alır; alınan kart varsayılan olarak satışa konur (satış fiyatı: ödenen ya da fut.gg, ±%20, ilan süresi 1 sa–1 gün, tahmini kâr/zarar), istenirse transfer listesinde ya da unassigned'da bırakılır. Alımdan sonra set yeniden eşitlenir.
+- **Token planlayıcı:** hedef token (Hall of FUT: 300 / 400 / 500 / 750) ya da coin bütçesi → her setten en fazla bir not seçen en ucuz plan (çoklu seçim sırt çantası; açgözlü seçimden 750 tokenda ~%50 ucuz).
+- **Üst şerit:** galeri seviyesi (oyundan elle; sonraki ödül seviyesi), toplam galeri puanı, kazanılabilen puan, kazanılan / şu an alınabilen / en fazla token, tamamlanan set, oyunda notlandırılacak setler.
+- **Sıralama ve filtre:** en çok / en az alınabilen token, en fazla token, mevcut kartlarla en çok token, en çok kalan, token başına en ucuz, sonraki token en ucuz, sonraki tokena en yakın, en çok tamamlanan; göster: tümü / şu an token alınabilenler / oyunda notlandırılacaklar / tamamlananlar / eşitlenmemişler.
+- **Pazar rozeti:** transfer pazarı / transfer listesi / takip listesinde galeride zaten toplanmış kartlara "✓ Galeride".
+- **Dil:** Türkçe / English (bayraklı seçici); ekran, durum mesajları ve bildirimler. Oyuncu listesi ekranı Türkçe kalıyor.
+- Alt çubukta **Coin ↻**, **Galeri harcaması** (↺), **Galeri bütçesi**, **Kart başına en fazla**; sağ üstte "Destek & fikir: Discord yusuflnx".
+- **Set kataloğu** `data/gallery-sets.json` (fut.gg'den `tools/build-gallery-sets.mjs`; çözümler, fiyatlar ve fiyat tarihleriyle). GitHub Actions her gün 21:00 (TR) yeniliyor; eklenti 21:40'tan sonra ilk açılışta çekiyor, başarısızsa 1 saat sonra yeniden deniyor. Fiyatlar 2 günden eskiyse detayda uyarı.
+
+### Güvenlik
+- **Kart başına fiyat sınırı:** canlı fiyat bakıldıysa canlı × 1,25; bakılmadıysa fut.gg × 2 (en az +2.000); üstüne "Kart başına en fazla" (varsayılan 50.000). Sınırı aşan kart alınmaz, raporda gerçek fiyatıyla yazılır ve o fiyat bir sonraki denemenin esası olur.
+- **Holografik ve Başlangıç** setlerinde sahiplik Web App'ten doğrulanamadığı için eşitleme, alım ve planlama kapalı (önceki ara sürümde boş kart listesiyle "eşitlenmiş" görünüp 1,6 M coin'lik alım açılabiliyordu; eski kayıtlar açılışta siliniyor).
+- **Transfer listesi 100 kartta dolunca** alım duruyor (önceden kartlar sessizce unassigned'da birikiyordu).
+- **Galeri'ye ayrı bütçe** (oyuncu listesinin bütçesinden bağımsız).
+- Durdur'dan hemen sonra başlatılan görevi eski görevin bitişi artık durduramıyor, durum mesajını da ezemiyor; beklenmedik görev hatası "çalışıyor" durumunda takılı bırakmıyor. Durdurulan alımda alınan kartların seti de "oyunda notlandır" olarak işaretleniyor.
+- İlanı sürekli başkası kapan kart raporda yazıyor ("ilanlar hep başkası tarafından alındı").
+- Sayfadan gelen UT adresi yalnız `*.ea.com/ut/game/` biçimindeyse kabul ediliyor; `host_permissions` `www.ea.com` ve `www.easports.com` ile sınırlandı.
+
+### Düzeltildi
+- **Alım sırasında ara ara "Oturum geçersiz":** FC 27'de güncel oturum `services.Authentication.utasSession` alanında (eski `sessionUtas` hep boştu); her istek gönderim anındaki anahtarla gidiyor. 401/403'te Web App kendi istemcisiyle dürtülüp (boşta süresi dolan oturumu yenilesin) istek bir kez tekrarlanıyor. Birden çok Web App sekmesi varsa oturumu açık olan seçiliyor.
+- Eşitleme sırasında Galeri sayfası sekmelere zıplamıyor; detaydaki kart listesi güncellemede kapanmıyor.
+- Armalar/portreler Oyuncu Ara ekranı açılmadan da geliyor (görsel kökü herhangi bir kart görselinden).
+- Gömülü panelde Discord adı kopyalanabiliyor (iframe `clipboard-write`).
+
+### Bilinen sınır
+- Buradaki not/puan oyundaki **bonus etiketleri** (aynı kulüp, ilk sahip +%500 …) içermez; oyundaki not daha yüksek olabilir. Çözüm kartlarının hepsi sende olan notlar "oyunda notlandır" olarak işaretlenir. Token için setin **oyunda notlandırılması** gerekir (Web App notlandıramaz): kart alınan setler işaretlenir, "✓ Notlandırdım" ile temizlenir.
+
+### Geliştirme
+- `tests/` (node:test): puan/not, fut.gg planı, fiyat sınırı, planlayıcının kaba kuvvetle doğrulanması, dil sözlüğü paritesi, userscript güncelliği. `.github/workflows/ci.yml` her push'ta sözdizimi + testler + userscript denetimi.
+
 ## [2.0.3] — 2026-09-25
 
 ### Düzeltildi
