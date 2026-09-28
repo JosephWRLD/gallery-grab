@@ -5,6 +5,11 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [2.1.2] / [1.4.2] — 2026-09-28
+
+### Değişti
+- Proje yeni GitHub hesabına taşındı: `github.com/JosephWRLD/gallery-grab`. Userscript güncelleme adresleri (`@updateURL` / `@downloadURL`) ve galeri kataloğu adresi buna göre güncellendi. Eski adres bir süre yönlendirmeye devam eder, yine de bu sürüme güncellemen önerilir.
+
 ## [2.1.1] / [1.4.1] — 2026-09-27
 
 ### Değişti
