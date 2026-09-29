@@ -5,6 +5,12 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [1.4.3] — 2026-09-29 (Chrome eklentisi)
+
+### Düzeltildi
+- Set detayında başlığın altında görünen "null" yazısı kaldırıldı.
+- Görsel adresi henüz öğrenilmeden (ilk kurulumda) galeri açılınca ekranın çökmesi düzeltildi.
+
 ## [2.1.2] / [1.4.2] — 2026-09-28
 
 ### Değişti

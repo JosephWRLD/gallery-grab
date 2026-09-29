@@ -456,7 +456,8 @@ async function renderDetail() {
     ]);
   }
 
-  $('dr').replaceChildren(
+  // replaceChildren null'ı "null" metni olarak basar; boş parçaları at
+  $('dr').replaceChildren(...[
     h('div', { class: 'hd' }, [setArt(set, img), h('div', { style: 'flex:1' }, [h('h2', { text: set.name }), h('div', { class: 'note', text: t('dt.sub', { r: set.required }) + tokenLabel(set, sum, t) + (saved ? t('dt.synced', { d: dt(saved.at) }) : '') })]),
       h('button', { class: 'g', text: '✕', onclick: closeDetail })]),
     state.galleryToGrade?.[set.id] ? h('div', { class: 'gbanner' }, [
@@ -467,7 +468,7 @@ async function renderDetail() {
     set.sol ? gradeTabs(set, sum, defs, prices) : null,
     body,
     list,
-  );
+  ].filter(Boolean));
 }
 
 // ---------------------------------------------------------------- token planlayıcı
