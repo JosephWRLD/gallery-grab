@@ -1,3 +1,5 @@
+<p align="center"><img src="branding/logo.png" alt="Gallery Grab" width="160"></p>
+
 # Gallery Grab
 
 FC 27 Ultimate Team Web App için **FUT Galeri** aracı: Web App'te olmayan Galeri'yi sol menüye ekler, setlerin durumunu EA'dan okur, fut.gg'nin en ucuz çözümlerini gösterir ve eksik kartları güncel pazar fiyatından alır. İki sürümü var: **Chrome eklentisi** (v1.4.1) ve **Tampermonkey kullanıcı scripti** (v2.1.1). İkisi aynı hesap kodunu kullanır; **ikisini birlikte kurma**.
