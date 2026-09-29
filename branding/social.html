@@ -1,0 +1,64 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&display=block" rel="stylesheet">
+<style>html,body{margin:0;background:transparent}svg{display:block}</style></head><body>
+<svg width="1280" height="640" viewBox="0 0 1280 640" xmlns="http://www.w3.org/2000/svg">
+<defs><radialGradient id="bg2" cx="30%" cy="50%" r="80%"><stop offset="0" stop-color="#16333a"/><stop offset="1" stop-color="#0a1316"/></radialGradient></defs><rect width="1280" height="640" fill="url(#bg2)"/>
+<g transform="translate(90,80) scale(0.94)"><defs>
+  <radialGradient id="bg" cx="50%" cy="42%" r="70%">
+    <stop offset="0" stop-color="#16333a"/><stop offset="1" stop-color="#0a1316"/>
+  </radialGradient>
+  <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#3cf2ff"/><stop offset="1" stop-color="#5dff9a"/>
+  </linearGradient>
+  <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffe9a3"/><stop offset=".5" stop-color="#e6b94a"/><stop offset="1" stop-color="#9c6b1c"/>
+  </linearGradient>
+  <linearGradient id="teal" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#46d7e6"/><stop offset="1" stop-color="#0f5f6b"/>
+  </linearGradient>
+  <linearGradient id="purp" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#8f7bff"/><stop offset="1" stop-color="#35207a"/>
+  </linearGradient>
+  <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+    <feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+  <filter id="sh" x="-30%" y="-30%" width="160%" height="160%">
+    <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#000" flood-opacity=".55"/>
+  </filter>
+  <path id="card" d="M14,0 H106 L120,16 V142 Q120,152 110,156 L60,168 L10,156 Q0,152 0,142 V16 Z"/>
+</defs>
+
+
+<!-- neon hex frame -->
+<path d="M256,40 L446,146 V366 L256,472 L66,366 V146 Z" fill="none" stroke="url(#rim)" stroke-width="12" stroke-linejoin="round" filter="url(#glow)"/>
+<path d="M256,64 L424,158 V354 L256,448 L88,354 V158 Z" fill="#0c1b1f" opacity=".85"/>
+
+<g transform="translate(256,262) scale(1.22) translate(-256,-262)">
+<g filter="url(#sh)">
+  <g transform="translate(256,268) rotate(-20) translate(-60,-84) translate(-44,0)">
+    <use href="#card" fill="url(#purp)" stroke="#c9bfff" stroke-width="4"/>
+  </g>
+  <g transform="translate(256,268) rotate(20) translate(-60,-84) translate(44,0)">
+    <use href="#card" fill="url(#teal)" stroke="#aef6ff" stroke-width="4"/>
+  </g>
+  <g transform="translate(256,258) translate(-60,-84)">
+    <use href="#card" fill="url(#gold)" stroke="#fff3c4" stroke-width="4"/>
+    <path d="M18,10 H102 L112,22 V36 H8 V22 Z" fill="#fff" opacity=".18"/>
+    <text x="60" y="108" text-anchor="middle" font-family="Russo One" font-size="62" fill="#3a2508" letter-spacing="-2">GG</text>
+    <rect x="22" y="124" width="76" height="6" rx="3" fill="#3a2508" opacity=".45"/>
+  </g>
+</g>
+
+</g>
+<g transform="translate(362,366)" filter="url(#sh)">
+  <circle r="46" fill="#0c1b1f" stroke="url(#rim)" stroke-width="7"/>
+  <path d="M0,-24 V10 M-15,-4 L0,12 L15,-4" fill="none" stroke="#5dff9a" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M-20,16 V22 H20 V16" fill="none" stroke="#3cf2ff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</g>
+<text x="640" y="300" font-family="Russo One" font-size="104" fill="#eafcff">GALLERY</text>
+<text x="640" y="410" font-family="Russo One" font-size="104" fill="url(#rim)">GRAB</text>
+<text x="644" y="480" font-family="Russo One" font-size="30" fill="#8fb3ba">FC 27 Web App · auto gallery collector</text>
+</svg>
+<script>document.fonts.ready.then(()=>document.title='ready')</script>
+</body></html>
