@@ -5,6 +5,17 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [2.1.6] / [1.4.7] — 2026-09-30
+
+### Düzeltildi
+- **Bazı tarayıcılarda (Opera'da görüldü) her set 0/N görünüyordu.** Teşhis raporu: EA'nın ham yanıtında
+  `isCollected`/`gradingScore` doğru geliyor, ama o Web App sürümünün kart nesnelerinde bu alanlar yok. Artık nesnede
+  alan yoksa aynı `/defid` isteğinin ham yanıtından okunur (adres `PerformanceObserver` ile yakalanır). Alanı taşıyan
+  Web App'te (Chrome) davranış ve istek sayısı değişmez.
+- **Teşhis → Genel tarama** aynı durumda sayımı ham yanıttan yapar (raporda `hamYanittan` = bu yolla sayılan istek).
+- **Pazar rozeti ("✓ Galeride")** aynı durumda EA'nın ham pazar yanıtından (transfermarket / tradepile / watchlist,
+  kart id → `isCollected`) beslenir; görünüm yanıttan önce çizilirse 400 ms sonra yeniden bakılır.
+
 ## [2.1.5] / [1.4.6] — 2026-09-30
 
 ### Değişti
