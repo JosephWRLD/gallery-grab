@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gallery Grab
 // @namespace    https://github.com/JosephWRLD/gallery-grab
-// @version      2.1.2
+// @version      2.1.3
 // @description  FC Web App: FUT Galeri setleri, notlar, fut.gg çözümleri, token planlayıcı ve eksik kartları alma; oyuncu listesinden en ucuz kart alma
 // @author       JosephWRLD — Discord: yusuflnx
 // @license      PolyForm-Noncommercial-1.0.0 (ticari kullanım/satış yasak)
@@ -710,6 +710,17 @@
     'btn.syncAll': 'Tümünü eşitle',
     'btn.syncAll.title': "Tüm kulüp, lig ve nadirlik setlerini EA'dan eşitler",
     'btn.catRefresh': 'Kataloğu yenile',
+    'btn.diag': 'Teşhis',
+    'btn.diag.title': "Setler 0/N görünüyorsa: EA'nın toplanma bilgisini ne döndürdüğünü raporlar (alım yapmaz)",
+    'diag.title': 'Teşhis — toplanma bilgisi',
+    'diag.body': "Oyunda notlandırdığın (✓ olması gereken) bir seti seç ve Çalıştır'a bas. Rapor alım yapmaz, kişisel bilgi içermez; Kopyala ile Discord'dan yusuflnx'e gönder.",
+    'diag.set': 'Set:',
+    'diag.run': 'Çalıştır',
+    'diag.running': 'Çalışıyor… (EA Web App sekmesi açık ve giriş yapılmış olmalı)',
+    'diag.copy': 'Kopyala',
+    'diag.copied': '✓ Kopyalandı',
+    'diag.ph': 'Rapor burada görünecek',
+    'diag.fail': 'Teşhis çalışmadı: {e}',
     'sort': 'Sırala',
     'show': 'Göster',
     'toList': 'Oyuncu listesi →',
@@ -973,6 +984,17 @@
     'btn.syncAll': 'Sync all',
     'btn.syncAll.title': 'Syncs every club, league and rarity set from EA',
     'btn.catRefresh': 'Refresh catalog',
+    'btn.diag': 'Diagnose',
+    'btn.diag.title': "If sets show 0/N: reports what EA returns as collection status (buys nothing)",
+    'diag.title': 'Diagnose — collection status',
+    'diag.body': "Pick a set you have graded in game (it should show ✓) and press Run. The report buys nothing and has no personal data; Copy it and send it to yusuflnx on Discord.",
+    'diag.set': 'Set:',
+    'diag.run': 'Run',
+    'diag.running': 'Running… (the EA Web App tab must be open and logged in)',
+    'diag.copy': 'Copy',
+    'diag.copied': '✓ Copied',
+    'diag.ph': 'The report will appear here',
+    'diag.fail': 'Diagnose failed: {e}',
     'sort': 'Sort',
     'show': 'Show',
     'toList': 'Player list →',
@@ -1566,6 +1588,132 @@
     }[sortBy];
     return by ? [...out].sort(by) : out;
   }
+
+  // ---------------------------------------------------------------- teşhis
+  // "Eşitliyor ama her set 0/N" sorunu için: Web App'in konsept aramasının döndürdüğü nesne + aynı isteğin ham JSON'u.
+  // Sayfa bağlamında çalışır (eklentide executeScript MAIN, userscript'te unsafeWindow). executeScript fonksiyonu
+  // kopyaladığı için kendi içinde bağımsız olmalı. Kimlik bilgisi (persona, e-posta, SID değeri) döndürmez.
+  function diagProbe(crit) {
+    /* global unsafeWindow */
+    const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+    const RX = /collect|grad|galler|owned|loan|untrad/i;
+    const val = (v) => {
+      if (typeof v === 'function') return 'fn';
+      try { return v === undefined ? 'undefined' : JSON.stringify(v).slice(0, 40); } catch (_) { return typeof v; }
+    };
+    // Nesnenin ve prototip zincirinin ilgili alanları (getter'lar dahil)
+    const fields = (o) => {
+      const out = {};
+      for (let p = o, d = 0; p && p !== Object.prototype && d < 5; p = Object.getPrototypeOf(p), d++) {
+        for (const k of Object.getOwnPropertyNames(p)) {
+          if (!RX.test(k) || k in out) continue;
+          try { out[k] = val(o[k]); } catch (_) { out[k] = 'err'; }
+        }
+      }
+      return out;
+    };
+    // Aynı alanın öğeler arasındaki değer dağılımı
+    const dist = (items, get) => {
+      const m = {};
+      for (const it of items) { let k; try { k = val(get(it)); } catch (_) { k = 'err'; } m[k] = (m[k] || 0) + 1; }
+      return m;
+    };
+    const methods = (o) => {
+      const out = new Set();
+      for (let p = o, d = 0; p && p !== Object.prototype && d < 5; p = Object.getPrototypeOf(p), d++) {
+        for (const k of Object.getOwnPropertyNames(p)) if (/collect|galler|grad|concept/i.test(k)) out.add(k);
+      }
+      return [...out];
+    };
+    const sid = () => { try { return W.services?.Authentication?.utasSession?.id || W.services?.Authentication?.getUtasSession?.()?.id || null; } catch (_) { return null; } };
+    const ua = navigator.userAgent || '';
+    const env = {
+      browser: /OPR\//.test(ua) ? 'Opera' : /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : 'other',
+      path: location.pathname.replace(/[^/a-z-]/gi, '').slice(0, 60),
+      sid: !!sid(),
+      services: Object.keys(W.services || {}).filter((k) => /collect|galler|item|club/i.test(k)),
+      itemMethods: methods(W.services?.Item),
+    };
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (v) => { if (!done) { done = true; resolve({ env, ...v }); } };
+      setTimeout(() => finish({ error: 'timeout' }), 25000);
+      try {
+        if (!W.services?.Item?.searchConceptItems || !W.UTSearchCriteriaDTO) { finish({ error: 'not-ready' }); return; }
+        const t0 = performance.now();
+        const c = new W.UTSearchCriteriaDTO();
+        c.type = W.SearchType.PLAYER;
+        c.count = 100;
+        c.offset = 0;
+        if (crit.club) c.club = crit.club;
+        if (crit.league) c.league = crit.league;
+        if (crit.rarities) c.rarities = crit.rarities;
+        const ref = {};
+        W.services.Item.searchConceptItems(c).observe(ref, async (o, res) => {
+          o.unobserve(ref);
+          const items = res?.response?.items || [];
+          const obj = {
+            success: !!res?.success, status: res?.status ?? null, n: items.length,
+            isCollected: dist(items, (i) => i.isCollected),
+            scoreGt0: items.filter((i) => Number(i.gradingScore) > 0).length,
+            first: items[0] ? fields(items[0]) : null,
+            firstCollected: (() => { const i = items.find((x) => x.isCollected); return i ? fields(i) : null; })(),
+          };
+          // Aynı isteğin ham yanıtı: Web App'in attığı /defid adresi ağ kayıtlarından
+          let raw = null;
+          try {
+            const e = performance.getEntriesByType('resource').filter((x) => x.startTime >= t0 - 5 && /\/defid\b/.test(x.name)).pop();
+            if (!e) raw = { error: 'no-request' };
+            else {
+              const r = await W.fetch(e.name, { headers: { 'X-UT-SID': sid() || '', Accept: 'application/json' }, credentials: 'omit' });
+              const j = await r.json().catch(() => null);
+              const arr = !j ? [] : Array.isArray(j) ? j : j.itemData || j.items || Object.values(j).find(Array.isArray) || [];
+              const keys = {};
+              for (const it of arr) for (const k of Object.keys(it || {})) if (RX.test(k)) keys[k] = true;
+              raw = {
+                status: r.status, query: e.name.split('?')[1]?.replace(/[^\w=&,.-]/g, '').slice(0, 160) || '',
+                top: j && !Array.isArray(j) ? Object.keys(j).slice(0, 10) : [], n: arr.length,
+                fields: Object.fromEntries(Object.keys(keys).map((k) => [k, dist(arr, (i) => i?.[k])])),
+              };
+            }
+          } catch (err) { raw = { error: String(err).slice(0, 120) }; }
+          finish({ obj, raw });
+        });
+      } catch (err) { finish({ error: String(err).slice(0, 120) }); }
+    });
+  }
+
+  // Teşhis sonucunu kullanıcının kopyalayıp göndereceği düz metne çevirir
+  function diagReport(r, meta = {}) {
+    const j = (x) => (x == null ? '—' : JSON.stringify(x));
+    const lines = [
+      `Gallery Grab teşhis · ${meta.app || '?'} · ${new Date(meta.at || Date.now()).toISOString()}`,
+      `Set: ${meta.set || '?'} · kriter ${j(meta.crit)} · kayıtlı özet ${j(meta.saved)}`,
+      `Ortam: ${j(r?.env)}`,
+    ];
+    if (r?.error) lines.push(`HATA: ${r.error}`);
+    if (r?.obj) {
+      lines.push(`Web App nesnesi: başarı=${r.obj.success} durum=${r.obj.status} kart=${r.obj.n} puan>0=${r.obj.scoreGt0}`);
+      lines.push(`  isCollected dağılımı: ${j(r.obj.isCollected)}`);
+      lines.push(`  ilk kart alanları: ${j(r.obj.first)}`);
+      lines.push(`  toplanmış ilk kart: ${j(r.obj.firstCollected)}`);
+    }
+    if (r?.raw) {
+      if (r.raw.error) lines.push(`Ham yanıt: HATA ${r.raw.error}`);
+      else {
+        lines.push(`Ham yanıt: HTTP ${r.raw.status} kart=${r.raw.n} üst=${j(r.raw.top)}`);
+        lines.push(`  sorgu: ${r.raw.query}`);
+        lines.push(`  alanlar: ${j(r.raw.fields)}`);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  // Teşhiste varsayılan set: bir takım filtresi olan ilk desteklenen set
+  function diagCrit(set) {
+    const f = set?.filter || {};
+    return f.teams ? { club: f.teams[0] } : f.leagues ? { league: f.leagues[0] } : f.rarities ? { rarities: f.rarities } : null;
+  }
   // @@END lib/gallery.js
 
   // ================================================================ GALERİ (v2.1.0)
@@ -2082,6 +2230,7 @@
         h('span', {}, [L('tab.info', { synced: synced.length, all }), h('b', { text: String(earned) }), L('tab.max', { max: gal.cat.sets.filter((x) => x.cat === gal.tab).reduce((a, x) => a + x.maxTokens, 0) })]),
         h('span', { text: gal.catErr ? L('cat.fail', { d: catDate(), e: gal.catErr }) : L('cat', { d: catDate() }) }),
         h('button', { class: 'g', text: L('btn.catRefresh'), onclick: () => refreshCatalog(true) }),
+        h('button', { class: 'g', text: L('btn.diag'), title: L('btn.diag.title'), onclick: () => { gal.modal = 'diag'; render(); } }),
         h('label', {}, [L('sort') + ' ', sel(sortOptions(L), gal.sort, (x) => { galSet('sort', x, 'gSort'); render(); })]),
         h('label', {}, [L('show') + ' ', sel(showOptions(L), gal.show, (x) => { galSet('show', x, 'gShow'); render(); })]),
       ]),
@@ -2115,7 +2264,7 @@
       run.running ? h('button', { class: 'dan', text: L('stop'), onclick: () => stop() }) : null,
     );
 
-    g.over.replaceChildren(...[gal.openId ? detailView() : null, gal.modal === 'sync' ? syncModal() : gal.modal === 'planner' ? plannerModal() : null].filter(Boolean));
+    g.over.replaceChildren(...[gal.openId ? detailView() : null, gal.modal === 'sync' ? syncModal() : gal.modal === 'planner' ? plannerModal() : gal.modal === 'diag' ? diagModal() : null].filter(Boolean));
   }
 
   // Üst özet: tüm galeri (büyük) + seçili sekme (küçük)
@@ -2158,6 +2307,41 @@
     return b;
   }
 
+  // Teşhis: kullanıcı oyunda notlandırdığı bir seti seçer; EA'nın döndürdüğü toplanma bilgisi rapor olarak kopyalanır
+  const diag = { id: null, text: '', running: false };
+  function diagModal() {
+    const sets = gal.cat.sets.filter((s) => !s.filter?.unsupported).slice().sort((a, b) => a.name.localeCompare(b.name, LOC));
+    if (diag.id == null) diag.id = (sets.find((s) => s.filter?.teams) || sets[0])?.id ?? null;
+    const close = () => { gal.modal = null; render(); };
+    const run = async () => {
+      const set = sets.find((x) => x.id === diag.id);
+      const crit = diagCrit(set);
+      if (!crit) return;
+      diag.running = true; diag.text = L('diag.running'); render();
+      let r;
+      try { r = await diagProbe(crit); } catch (e) { r = { error: String(e?.message || e) }; }
+      const sm = gal.summary[set.id];
+      const app = 'userscript v' + (typeof GM_info !== 'undefined' ? GM_info.script?.version : '?') + ' · ' + (typeof GM_info !== 'undefined' ? GM_info.scriptHandler || '' : '');
+      diag.text = diagReport(r, { app, set: set.name, crit, saved: sm ? { c: sm.collected, n: sm.total, sc: sm.score } : null });
+      diag.running = false; render();
+    };
+    const ta = h('textarea', { readOnly: true, value: diag.text, placeholder: L('diag.ph'), style: 'width:100%;height:220px;margin-top:10px;font:11px/1.4 ui-monospace,Consolas,monospace;box-sizing:border-box' });
+    return h('div', { class: 'md', onclick: (e) => { if (e.target === e.currentTarget) close(); } }, [h('div', { class: 'box', style: 'width:min(720px,100%)' }, [
+      h('h3', { text: L('diag.title') }),
+      h('div', { class: 'mut', text: L('diag.body') }),
+      h('label', { class: 'opt' }, [L('diag.set') + ' ', h('select', { onchange: (e) => { diag.id = Number(e.target.value); } },
+        sets.map((x) => h('option', { value: String(x.id), selected: x.id === diag.id, text: x.name + (gal.summary[x.id] ? ` (${gal.summary[x.id].collected}/${gal.summary[x.id].total})` : '') })))]),
+      ta,
+      h('div', { class: 'row end' }, [
+        h('button', { class: 'g', text: L('close'), onclick: close }),
+        h('button', { class: 'g', text: L('diag.copy'), disabled: !diag.text || diag.running, onclick: async (e) => {
+          const b = e.currentTarget;
+          try { await navigator.clipboard.writeText(diag.text); b.textContent = L('diag.copied'); } catch (_) { ta.select(); }
+        } }),
+        h('button', { class: 'b', text: L('diag.run'), disabled: diag.running, onclick: run }),
+      ]),
+    ])]);
+  }
   function syncModal() {
     const all = gal.cat.sets.filter((s) => !s.filter?.unsupported);
     const sets = gal.skipRecent ? all.filter((s) => !(gal.summary[s.id]?.at > Date.now() - RECENT)) : all;

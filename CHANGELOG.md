@@ -5,6 +5,13 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [2.1.3] / [1.4.4] — 2026-09-29
+
+### Eklendi
+- **Teşhis** düğmesi (galeri ekranı, "Kataloğu yenile" yanında): setler eşitlendiği hâlde hepsi 0/N görünüyorsa, seçilen set için
+  EA'nın döndürdüğü toplanma bilgisini (Web App nesnesi + aynı isteğin ham yanıtı) raporlar. Alım yapmaz; rapor kişisel bilgi
+  (persona, e-posta, oturum anahtarı) içermez, "Kopyala" ile destek için gönderilebilir.
+
 ## [1.4.3] — 2026-09-29 (Chrome eklentisi)
 
 ### Düzeltildi
