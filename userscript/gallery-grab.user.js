@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gallery Grab
 // @namespace    https://github.com/JosephWRLD/gallery-grab
-// @version      2.1.6
+// @version      2.2.0
 // @description  FC Web App: FUT Galeri setleri, notlar, fut.gg çözümleri, token planlayıcı ve eksik kartları alma; oyuncu listesinden en ucuz kart alma
 // @author       JosephWRLD — Discord: yusuflnx
 // @license      PolyForm-Noncommercial-1.0.0 (ticari kullanım/satış yasak)
@@ -970,6 +970,36 @@
     'bg.done1': '{name}: {n} kart alındı',
     'bg.done1b': ' — {c}/{r}, not {g}',
     'bg.planDone': 'Plan bitti: {n} kart alındı',
+    'bg.autoNone.none': '{name}: çözüm yok, atlandı',
+    'bg.autoNone.done': '{name}: hedefe kadar tüm dereceler kazanılmış, atlandı',
+    'bg.autoNone.coins': '{name}: coin/bütçe hiçbir dereceye yetmiyor, atlandı',
+    'bg.autoNone.listing': '{name}: gereken kartların ilanı yok, atlandı',
+    'bg.autoFell': '{name}: {from} ulaşılamıyor → {to}',
+    'bg.autoReady': '{name}: {g} için kartların hepsi sende — oyunda notlandır',
+    'sel.mode': 'Çoklu seçim',
+    'sel.mode.title': 'Birden çok set seç, hedef dereceyi belirle, sırayla al',
+    'sel.count': '{n} set seçildi',
+    'sel.target': 'Hedef',
+    'sel.target.max': 'En yüksek',
+    'sel.auto': 'Oto',
+    'sel.tabAll': 'Sekmedekileri seç',
+    'sel.clear': 'Temizle',
+    'sel.close': 'Kapat',
+    'sel.empty': 'Kartlara tıklayarak set seç.',
+    'sel.buy': 'Sırayla al ({n} set · {k} kart ≈ {c})',
+    'sel.confirm': 'Eminim — {n} seti sırayla al (≈ {c})',
+    'sel.fell': '{from} olmuyor',
+    'sel.why.none': 'çözüm yok',
+    'sel.why.done': 'yeni derece yok',
+    'sel.avail': 'Kullanılabilir: {c}',
+    'sel.avail.none': 'Kullanılabilir: sınırsız (coin bilinmiyor)',
+    'sel.avail.title': 'Güncel coin; galeri bütçesi girildiyse bütçeden kalanla sınırlı',
+    'sel.why.coins': 'coin yetmiyor',
+    'sel.why.listing': 'ilan yok',
+    'sel.unsynced': 'eşitlenmedi · atlanır',
+    'sel.ready': 'hazır · oyunda notlandır',
+    'sel.note': 'Setler bu sırayla alınır. Coin (ve galeri bütçesi) sırayla paylaştırılır: yetmeyen set otomatik alt dereceye düşer. Alım sırasında güncel coin ve fiyatla yeniden kontrol edilir.',
+    'sel.remove': 'Listeden çıkar',
     'bg.catalog': 'Katalog',
     'sr.471': 'Hesapta işlem yasağı/yetki reddi (471)',
     'sr.494': 'Transfer pazarı kilitli (494)',
@@ -1244,6 +1274,36 @@
     'bg.done1': '{name}: {n} cards bought',
     'bg.done1b': ' — {c}/{r}, grade {g}',
     'bg.planDone': 'Plan finished: {n} cards bought',
+    'bg.autoNone.none': '{name}: no solution, skipped',
+    'bg.autoNone.done': '{name}: every grade up to the target is already earned, skipped',
+    'bg.autoNone.coins': "{name}: coins/budget don't cover any grade, skipped",
+    'bg.autoNone.listing': '{name}: required cards have no listings, skipped',
+    'bg.autoFell': '{name}: {from} not reachable → {to}',
+    'bg.autoReady': '{name}: you own every card for {g} — grade it in game',
+    'sel.mode': 'Multi-select',
+    'sel.mode.title': 'Pick several sets, set a target grade, buy them in order',
+    'sel.count': '{n} sets selected',
+    'sel.target': 'Target',
+    'sel.target.max': 'Highest',
+    'sel.auto': 'Auto',
+    'sel.tabAll': 'Select this tab',
+    'sel.clear': 'Clear',
+    'sel.close': 'Close',
+    'sel.empty': 'Click cards to select sets.',
+    'sel.buy': 'Buy in order ({n} sets · {k} cards ≈ {c})',
+    'sel.confirm': 'Confirm — buy {n} sets in order (≈ {c})',
+    'sel.fell': '{from} not reachable',
+    'sel.why.none': 'no solution',
+    'sel.why.done': 'nothing higher',
+    'sel.avail': 'Available: {c}',
+    'sel.avail.none': 'Available: no limit (coins unknown)',
+    'sel.avail.title': 'Current coins; limited to what is left of the gallery budget if one is set',
+    'sel.why.coins': 'not enough coins',
+    'sel.why.listing': 'no listings',
+    'sel.unsynced': 'not synced · skipped',
+    'sel.ready': 'ready · grade in game',
+    'sel.note': 'Sets are bought in this order. Coins (and the gallery budget) are shared in order: a set that cannot afford its target drops to a lower grade automatically. Re-checked with current coins and prices while buying.',
+    'sel.remove': 'Remove from list',
     'bg.catalog': 'Catalog',
     'sr.471': 'Account trade ban / permission denied (471)',
     'sr.494': 'Transfer market locked (494)',
@@ -1393,6 +1453,41 @@
     const ladder = set.grades || [];
     const ok = (t) => { const g = ladder.find((x) => x.g === t.g); return g && g.score > score && (g.tokens || 0) > 0; };
     return (tiers.find(ok) || tiers[tiers.length - 1])?.g || null;
+  }
+
+  // Hedef dereceden (yoksa en yüksekten) aşağı doğru ulaşılabilir ilk derece.
+  // Ulaşılabilir: fut.gg çözümü var, henüz kazanılmamış, eksik kartlardan ilanı olmadığı bilinen yok ve
+  // eksiklerin maliyeti coins'i aşmıyor (coins null → sınır yok). Dönen: { g, plan, fell } | { g: null, why }
+  // why: 'none' (çözüm yok/desteklenmiyor) | 'done' (hedefe kadar hepsi kazanılmış) | 'coins' | 'listing'
+  function pickGrade(set, defs = null, live = null, target = null, coins = null) {
+    const tiers = set.sol?.tiers || [];
+    if (!tiers.length || set.filter?.unsupported) return { g: null, why: 'none' };
+    const score = defs ? summarise(set, defs).score : 0;
+    const top = target && GRADES.includes(target) ? GRADES.indexOf(target) : GRADES.length - 1;
+    const cands = tiers.filter((t) => GRADES.indexOf(t.g) <= top).sort((a, b) => GRADES.indexOf(b.g) - GRADES.indexOf(a.g));
+    let why = 'done';
+    for (const t of cands) {
+      const g = set.grades.find((x) => x.g === t.g);
+      if (!g || g.score <= score) continue;   // zaten kazanılmış
+      const plan = planFromTier(set, t.g, defs, live);
+      if (plan.noListing) { why = 'listing'; continue; }
+      if (coins != null && plan.need > coins) { if (why !== 'listing') why = 'coins'; continue; }
+      return { g: t.g, plan, fell: !!target && t.g !== target };
+    }
+    return { g: null, why };
+  }
+
+  // Çoklu seçim: setler sırayla, coin'ler sırayla paylaştırılarak (her set kalan coin'le kendi en yüksek derecesini alır).
+  // items = [{ set, defs, grade? }] (grade verilmişse o set için hedef odur). Dönen: [{ set, g, plan, fell, why }], toplam
+  function pickBatch(items, live = null, target = null, coins = null) {
+    let left = coins;
+    const rows = items.map(({ set, defs, grade }) => {
+      const r = pickGrade(set, defs, live, grade || target, left);
+      if (r.g && left != null) left -= r.plan.need;
+      return { set, ...r };
+    });
+    const need = rows.reduce((a, r) => a + (r.plan?.need || 0), 0);
+    return { rows, need, tax: Math.ceil(need * TAX), cards: rows.reduce((a, r) => a + (r.plan?.missing || 0), 0) };
   }
 
   // ---------------------------------------------------------------- token planlayıcı
@@ -1892,6 +1987,9 @@
     prices: store.get('gPrices', {}),   // { [def]: { p, at } } — pazardaki güncel fiyat (0 = ilan yok)
     toGrade: store.get('gToGrade', {}), // { [setId]: at } — kart alınıp oyunda notlandırılması gereken setler
     listOpen: false,
+    // çoklu seçim: ids = alım sırası; grade[id] = sete özel hedef; target = genel hedef (null = en yüksek)
+    sel: { on: false, ids: [], grade: {}, target: null, ...store.get('gSel', {}) },
+    selConfirm: false,
   };
   const galSet = (k, v, key) => { gal[k] = v; store.set(key, v); };
   // Dil: Galeri ekranındaki TR/EN seçimi (yoksa tarayıcı dili). L(anahtar, {yer}) → metin
@@ -2278,9 +2376,18 @@
       if (set.filter?.unsupported) { notes.push(L('bg.unsupported', { name: set.name })); continue; }
       const defs = gal.defs.get(it.setId);
       if (!defs) { notes.push(L('bg.unsyncedSkip', { name: set.name })); continue; }
-      const plan = planFromTier(set, it.grade, defs, livePrices());
+      const live = livePrices();
+      let grade = it.grade;
+      // Çoklu seçim (auto): o anki coin/bütçe ve fiyatlarla hedeften aşağı ulaşılabilir en yüksek derece
+      if (it.auto) {
+        const p = pickGrade(set, defs, live, it.grade || null, availCoins());
+        if (!p.g) { notes.push(L('bg.autoNone.' + p.why, { name: set.name })); continue; }
+        if (p.fell) notes.push(L('bg.autoFell', { name: set.name, from: it.grade, to: p.g }));
+        grade = p.g;
+      }
+      const plan = planFromTier(set, grade, defs, live);
       const todo = plan ? plan.cards.filter((c) => !c.col) : [];
-      if (!todo.length) continue;
+      if (!todo.length) { if (plan) notes.push(L('bg.autoReady', { name: set.name, g: grade })); continue; }
       const r = await buyCards(my, buyTargets(todo, settings.maxCard), `[${i + 1}/${items.length}] ${set.name} · `, ctx);
       total += r.bought;
       if (r.halt === 'stopped' || r.halt === 'error') { if (r.bought) markToGrade(set.id); return; }
@@ -2379,8 +2486,10 @@
       const sum = sums[set.id];
       const full = sum && sum.collected >= sum.required;
       const n = next.get(set.id);
-      return h('div', { class: 'set' + (full ? ' full' : ''), onclick: () => { gal.openId = set.id; gal.openGrade = null; gal.confirmBuy = false; gal.filter = 'all'; gal.listOpen = false; render(); } }, [
-        full ? h('span', { class: 'chk', text: '✓' }) : null,
+      const picked = gal.sel.on && gal.sel.ids.includes(set.id);
+      return h('div', { class: 'set' + (full ? ' full' : '') + (picked ? ' picked' : ''), onclick: () => { if (gal.sel.on) { toggleSel(set.id); return; } gal.openId = set.id; gal.openGrade = null; gal.confirmBuy = false; gal.filter = 'all'; gal.listOpen = false; render(); } }, [
+        full && !gal.sel.on ? h('span', { class: 'chk', text: '✓' }) : null,
+        gal.sel.on ? h('span', { class: 'pick', text: picked ? String(gal.sel.ids.indexOf(set.id) + 1) : '' }) : null,
         gal.toGrade[set.id] || n?.ready ? h('span', { class: 'gbadge', text: L('grade.badge'), title: L('ov.toGrade.title') }) : null,
         h('div', { class: 'hd' }, [setArt(set), h('div', {}, [
           h('div', { class: 'nm', text: set.name }),
@@ -2412,6 +2521,7 @@
       overviewStrip(sums),
       h('div', { class: 'top' }, [
         h('div', { class: 'tabs' }, gal.cat.categories.map((c) => h('button', { class: c.id === gal.tab ? 'on' : '', text: c.name, onclick: () => { galSet('tab', c.id, 'gTab'); render(); } }))),
+        h('button', { class: gal.sel.on ? 'dan' : 'b', text: L('sel.mode'), title: L('sel.mode.title'), onclick: () => { gal.sel.on = !gal.sel.on; gal.selConfirm = false; saveSel(); render(); } }),
         taskBtn({ class: 'b', text: L('btn.planner'), title: L('btn.planner.title'), onclick: () => { gal.modal = 'planner'; gal.pl.confirm = false; runPlanner(); render(); } }),
         taskBtn({ class: 'b', text: L('btn.syncAll'), title: L('btn.syncAll.title'), onclick: () => { gal.modal = 'sync'; render(); } }),
       ]),
@@ -2423,6 +2533,7 @@
         h('label', {}, [L('sort') + ' ', sel(sortOptions(L), gal.sort, (x) => { galSet('sort', x, 'gSort'); render(); })]),
         h('label', {}, [L('show') + ' ', sel(showOptions(L), gal.show, (x) => { galSet('show', x, 'gShow'); render(); })]),
       ]),
+      gal.sel.on ? selBar() : null,
       h('div', { class: 'grid' }, sets.length ? sets.map(card) : [h('div', { class: 'empty', text: all ? L('grid.emptyFilter') : L('grid.empty') })]),
     );
 
@@ -2454,6 +2565,82 @@
     );
 
     g.over.replaceChildren(...[gal.openId ? detailView() : null, gal.modal === 'sync' ? syncModal() : gal.modal === 'planner' ? plannerModal() : gal.modal === 'diag' ? diagModal() : null].filter(Boolean));
+  }
+
+  // ---------------------------------------------------------------- çoklu seçim
+  const saveSel = () => store.set('gSel', { on: gal.sel.on, ids: gal.sel.ids, grade: gal.sel.grade, target: gal.sel.target });
+  function toggleSel(id) {
+    const S = gal.sel;
+    S.ids = S.ids.includes(id) ? S.ids.filter((x) => x !== id) : [...S.ids, id];
+    gal.selConfirm = false;
+    saveSel();
+    render();
+  }
+  // Kullanılabilir coin: güncel coin, galeri bütçesi varsa kalanıyla sınırlı (ikisi de bilinmiyorsa null = sınır yok)
+  function availCoins() {
+    let a = run.coins ?? null;
+    if (settings.galleryBudget > 0) a = Math.min(a ?? Infinity, Math.max(0, settings.galleryBudget - (gal.spent || 0)));
+    return a === Infinity ? null : a;
+  }
+  function selBar() {
+    const S = gal.sel;
+    const byId = new Map(gal.cat.sets.map((x) => [x.id, x]));
+    S.ids = S.ids.filter((id) => byId.has(id));
+    const b = pickBatch(S.ids.map((id) => ({ set: byId.get(id), defs: gal.defs.get(id) || null, grade: S.grade[id] || null })), livePrices(), S.target, availCoins());
+    const buyable = b.rows.filter((r) => r.g && gal.defs.has(r.set.id) && r.plan.missing);
+    const need = buyable.reduce((a, r) => a + r.plan.need, 0);
+    const cards = buyable.reduce((a, r) => a + r.plan.missing, 0);
+    const gsel = (value, first, on, grades = GRADES) => {
+      const el = h('select', { onchange: (e) => on(e.target.value) }, [h('option', { value: '', text: first }), ...grades.slice().reverse().map((g) => h('option', { value: g, text: g }))]);
+      el.value = value || '';
+      return el;
+    };
+    const row = (r, i) => {
+      const x = r.set;
+      const tiers = GRADES.filter((g) => x.sol?.tiers?.some((y) => y.g === g));
+      let info;
+      if (!r.g) info = h('span', { class: 'why', text: L('sel.why.' + r.why) });
+      else if (!gal.defs.has(x.id)) info = h('span', { class: 'why', text: L('sel.unsynced') });
+      else if (!r.plan.missing) info = h('span', { class: 'why mut', text: L('sel.ready') });
+      else info = h('span', { class: 'i', text: L('pl.row', { n: r.plan.missing, c: KF(r.plan.need) }) });
+      return h('div', { class: 'srow' }, [
+        h('span', { class: 'i', text: String(i + 1) }),
+        setArt(x),
+        h('div', { class: 'snm', text: x.name, onclick: () => { gal.openId = x.id; gal.openGrade = null; gal.confirmBuy = false; gal.filter = 'all'; gal.listOpen = false; render(); } }),
+        gsel(S.grade[x.id], L('sel.auto'), (v) => { if (v) S.grade[x.id] = v; else delete S.grade[x.id]; gal.selConfirm = false; saveSel(); render(); }, tiers),
+        h('span', { class: 'gg ' + (r.g || ''), text: r.g || '—', title: r.fell ? L('sel.fell', { from: S.grade[x.id] || S.target }) : '' }),
+        info,
+        h('button', { class: 'x', text: '✕', title: L('sel.remove'), onclick: () => toggleSel(x.id) }),
+      ]);
+    };
+    return h('div', { class: 'selbar' }, [
+      h('div', { class: 'hd' }, [
+        h('b', { text: L('sel.count', { n: S.ids.length }) }),
+        h('span', { class: 'mut', title: L('sel.avail.title'), text: availCoins() == null ? L('sel.avail.none') : L('sel.avail', { c: fmt(availCoins()) }) }),
+        h('label', {}, [L('sel.target') + ' ', gsel(S.target, L('sel.target.max'), (v) => { S.target = v || null; gal.selConfirm = false; saveSel(); render(); })]),
+        h('span', { style: 'flex:1' }),
+        h('button', { class: 'g', text: L('sel.tabAll'), onclick: () => {
+          for (const x of gal.cat.sets) if (x.cat === gal.tab && x.sol?.tiers?.length && !x.filter?.unsupported && !S.ids.includes(x.id)) S.ids.push(x.id);
+          saveSel(); render();
+        } }),
+        h('button', { class: 'g', text: L('sel.clear'), onclick: () => { S.ids = []; S.grade = {}; gal.selConfirm = false; saveSel(); render(); } }),
+      ]),
+      S.ids.length ? h('div', { class: 'selrows' }, b.rows.map(row)) : h('div', { class: 'mut', text: L('sel.empty') }),
+      h('div', { class: 'ft' }, [
+        h('span', { class: 'mut', text: L('sel.note') }),
+        h('button', {
+          class: gal.selConfirm ? 'dan' : 'b', disabled: run.running || !buyable.length,
+          text: gal.selConfirm ? L('sel.confirm', { n: buyable.length, c: fmt(need) }) : L('sel.buy', { n: buyable.length, k: cards, c: fmt(need) }),
+          onclick: () => {
+            if (!gal.selConfirm) { gal.selConfirm = true; render(); return; }
+            gal.selConfirm = false;
+            // Derece alım anında yeniden seçilir (auto): hedef = sete özel ya da genel hedef
+            startTask((my) => buyBatch(my, buyable.map((r) => ({ setId: r.set.id, grade: S.grade[r.set.id] || S.target || null, auto: true }))), L('bg.planStart'));
+          },
+        }),
+        gal.selConfirm ? h('button', { class: 'g', text: L('cancel'), onclick: () => { gal.selConfirm = false; render(); } }) : null,
+      ]),
+    ]);
   }
 
   // Üst özet: tüm galeri (büyük) + seçili sekme (küçük)
@@ -2630,7 +2817,8 @@
     const defs = gal.defs.get(set.id) || null;
     const saved = defs ? store.get('gdefs:' + set.id, null) : null;
     const sum = defs ? summarise(set, defs) : null;
-    if (!gal.openGrade || !set.sol?.tiers?.some((t) => t.g === gal.openGrade)) gal.openGrade = defaultTier(set, sum?.score || 0);
+    // Varsayılan: şu an ulaşılabilir en yüksek derece (coin/bütçe + ilan); yoksa eski kural
+    if (!gal.openGrade || !set.sol?.tiers?.some((t) => t.g === gal.openGrade)) gal.openGrade = pickGrade(set, gal.defs.get(set.id) || null, livePrices(), null, availCoins()).g || defaultTier(set, sum?.score || 0);
     const close = () => { gal.openId = null; render(); };
     const live = livePrices();
     const sync1 = () => startTask((my) => syncPrice(my, set.id, gal.openGrade), L('bg.syncStart'));
@@ -2816,6 +3004,24 @@
 #fcgu-panel .set { position:relative; background:linear-gradient(180deg,#14223a,#101b2e); border:1px solid #23324d; border-radius:12px; padding:12px; cursor:pointer; }
 #fcgu-panel .set:hover { border-color:#3a5078; }
 #fcgu-panel .set.full { border-color:rgba(47,208,138,.45); }
+#fcgu-panel .set .pick { position:absolute; top:10px; right:12px; width:18px; height:18px; border:1.5px solid #8a97ad; border-radius:5px; display:grid; place-items:center; font-weight:800; font-size:12px; color:#1a1400; }
+#fcgu-panel .set.picked { border-color:#f5c518; box-shadow:0 0 0 1px #f5c518 inset; }
+#fcgu-panel .set.picked .pick { background:#f5c518; border-color:#f5c518; }
+#fcgu-panel .selbar { position:sticky; top:0; z-index:3; background:rgba(9,16,29,.97); border:1px solid rgba(245,197,24,.45); border-radius:12px; padding:10px 12px; margin:0 0 12px; }
+#fcgu-panel .selbar .hd { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+#fcgu-panel .selbar .hd b { color:#f5c518; }
+#fcgu-panel .selrows { max-height:34vh; overflow:auto; margin-top:8px; border-top:1px solid #23324d; }
+#fcgu-panel .srow { display:grid; grid-template-columns:22px 26px 1fr auto auto auto 26px; gap:8px; align-items:center; padding:5px 2px; border-bottom:1px solid rgba(35,50,77,.6); font-size:12px; }
+#fcgu-panel .srow .crest, #fcgu-panel .srow .ph { width:24px; height:24px; font-size:11px; }
+#fcgu-panel .srow .i { color:#8a97ad; text-align:right; }
+#fcgu-panel .srow .snm { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
+#fcgu-panel .srow .gg { font-weight:800; min-width:18px; text-align:center; }
+#fcgu-panel .srow .gg.D { color:#e0772e; } #fcgu-panel .srow .gg.C { color:#c9d1dc; } #fcgu-panel .srow .gg.B { color:#f5c518; } #fcgu-panel .srow .gg.A { color:#3d9bff; } #fcgu-panel .srow .gg.S { color:#a66bff; }
+#fcgu-panel .srow .why { color:#f0b43c; font-size:11px; } #fcgu-panel .srow .why.mut { color:#8a97ad; }
+#fcgu-panel .srow button.x { background:none; border:0; color:#8a97ad; padding:0; }
+#fcgu-panel .srow button.x:hover { color:#ef5a5a; }
+#fcgu-panel .selbar .ft { display:flex; gap:8px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:8px; }
+#fcgu-panel .selbar .ft .mut { flex:1; min-width:220px; font-size:11px; }
 #fcgu-panel .set .hd { display:flex; gap:10px; }
 #fcgu-panel .crest { width:34px; height:34px; object-fit:contain; flex:none; }
 #fcgu-panel .ph { width:34px; height:34px; border-radius:8px; flex:none; display:grid; place-items:center; background:#1c2b47; color:#f5c518; font-weight:800; }

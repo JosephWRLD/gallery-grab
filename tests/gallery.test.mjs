@@ -59,6 +59,33 @@ test('planFromTier: sende olanlar düşülür, canlı fiyat fut.gg fiyatının y
   assert.equal(G.planFromTier(set, 'A', defs), null);         // çözümü olmayan not
 });
 
+test('pickGrade: hedeften aşağı ulaşılabilir ilk derece (coin, ilan, kazanılmış)', () => {
+  const set = mkSet();
+  const defs = [def(101, 100, true), def(102, 200, false), def(103, 300, false), def(104, 400, false)];
+  // S eksikleri 900+1500+5000 = 7400; B eksikleri 900+1500 = 2400
+  assert.equal(G.pickGrade(set, defs).g, 'S');                          // hedef yok → en yüksek
+  let r = G.pickGrade(set, defs, null, 'S', 5000);
+  assert.equal(r.g, 'B'); assert.equal(r.fell, true);                   // S'ye coin yetmiyor → B
+  assert.equal(G.pickGrade(set, defs, null, 'A', null).g, 'B');         // A'nın çözümü yok → B
+  assert.equal(G.pickGrade(set, defs, { 104: 0 }, 'S').g, 'B');         // S'de ilanı olmayan kart → B
+  r = G.pickGrade(set, defs, null, 'S', 100);
+  assert.equal(r.g, null); assert.equal(r.why, 'coins');                // D bile 0 (sende) ama D zaten kazanılmış
+  const done = [def(102, 200, true), def(103, 300, true), def(104, 600, true)];
+  assert.deepEqual(G.pickGrade(set, done, null, 'S'), { g: null, why: 'done' });   // 1100 ≥ S eşiği
+  assert.equal(G.pickGrade({ ...set, filter: { unsupported: true } }, defs).why, 'none');
+  assert.equal(G.pickGrade(set, null, null, null, 7400).g, 'S');        // eşitlenmemiş: tamamı sayılır
+});
+
+test('pickBatch: coin sırayla paylaşılır, yetmeyen set alt dereceye düşer', () => {
+  const set = mkSet();
+  const defs = [def(101, 100, true), def(102, 200, false), def(103, 300, false), def(104, 400, false)];
+  const b = G.pickBatch([{ set, defs }, { set: { ...set, id: 2 }, defs }, { set: { ...set, id: 3 }, defs, grade: 'B' }], null, 'S', 10000);
+  assert.deepEqual(b.rows.map((r) => r.g), ['S', 'B', null]);           // 7400 → kalan 2600 → B 2400 → kalan 200
+  assert.equal(b.rows[2].why, 'coins');
+  assert.equal(b.need, 7400 + 2400);
+  assert.equal(b.cards, 3 + 2);
+});
+
 // ---------------------------------------------------------------- fiyat sınırı
 test('roundBin: EA fiyat basamakları ve en düşük BIN', () => {
   assert.equal(G.roundBin(875), 850);

@@ -5,6 +5,20 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [2.2.0] / [1.5.0] — 2026-09-30
+
+### Eklendi
+- **Çoklu seçim:** galeride "Çoklu seçim" açılınca kartlara tıklamak seti seçer (sıra numarası = alım sırası).
+  Üstteki çubukta genel **hedef derece** (En yüksek / S / A / B / C / D), her set için ayrı derece (Oto = genel hedef),
+  set başına alınacak derece + kart sayısı + maliyet, **Sekmedekileri seç**, **Temizle** ve **Sırayla al**.
+  Seçim ve hedef tarayıcıda hatırlanır.
+- **Sıralı işleme:** seçilen setler kuyrukta tek tek alınır (mevcut toplu alım akışı; Durdur her an çalışır).
+- **Otomatik en yüksek derece:** derece, hedeften aşağı doğru *ulaşılabilir* ilk derecedir — fut.gg çözümü var,
+  henüz kazanılmamış, eksik kartlardan ilanı olmadığı bilinen yok ve maliyet kullanılabilir coin'e sığıyor
+  (güncel coin; galeri bütçesi girildiyse bütçeden kalanla sınırlı). Coin setlere sırayla paylaştırılır; yetmeyen
+  set alt dereceye düşer (S → A → B …). Alım sırasında her setten önce güncel coin ve fiyatla yeniden seçilir.
+- **Set detayı** artık varsayılan olarak ulaşılabilir en yüksek dereceyle açılır (hiçbiri ulaşılamıyorsa eski kural).
+
 ## [2.1.6] / [1.4.7] — 2026-09-30
 
 ### Düzeltildi
