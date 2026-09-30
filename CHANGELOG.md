@@ -5,6 +5,19 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [2.1.4] / [1.4.5] — 2026-09-30
+
+### Değişti
+- **Teşhis** genişledi: setin bütün takımları (ör. Arsenal erkek + kadın) ayrı ayrı sorgulanıyor; rapora kayıtlı eşitleme
+  verisinin genel özeti (eşitlenen / toplanan set sayısı, tarih aralığı, alım sonrası ayarı), EA yanıtındaki tüm alan adları
+  ve toplanmış / toplanmamış kartları ayıran alanlar eklendi. Bütün setlerin kayıtlı toplanan/gereken listesi de
+  rapora giriyor (EA'ya ek istek atmaz). Web App yanıtı önbellekten verdiğinde ham yanıt için adres yeniden kuruluyor.
+
+### Eklendi
+- Teşhis penceresinde **Genel tarama (tümü)**: bütün setlerin bütün takımları/ligleri EA'dan tek tek sorgulanır, her set için
+  toplanan/gereken, kart sayısı, kayıtlı özetten fark ve hatalar tek raporda toplanır. Başlamadan önce süre tahmini gösterilir,
+  Durdur ile ya da pencere kapatılınca durur. Alım yapmaz.
+
 ## [2.1.3] / [1.4.4] — 2026-09-29
 
 ### Eklendi

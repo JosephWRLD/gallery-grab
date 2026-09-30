@@ -4,7 +4,7 @@ import { imgUrls } from './lib/img.js';
 import { prevPrice } from './lib/pricing.js';
 import { fetchSetDefs, diagnoseConcept } from './lib/gallery-api.js';
 import { loadCatalog, refreshCatalog } from './lib/catalog.js';
-import { summarise, priceCandidates, cheapestFill, baseOf, syncEstimate, planFromTier, fmtDur, relistPrice, buyTargets, MAX_CARD_DEFAULT, diagCrit, diagReport } from './lib/gallery.js';
+import { summarise, priceCandidates, cheapestFill, baseOf, syncEstimate, planFromTier, fmtDur, relistPrice, buyTargets, MAX_CARD_DEFAULT, diagCrit, diagReport, diagOverview, diagSetList, diagScan } from './lib/gallery.js';
 import { makeT, detectLang, localeOf } from './lib/i18n.js';
 
 // Galeri durum mesajlarının dili (Galeri ekranındaki TR/EN seçimi; yoksa tarayıcı dili)
@@ -23,6 +23,7 @@ const DEFAULT_RUN = { running: false, spent: 0, coins: null, text: '', level: 'i
 const TP_MAX = 100;    // transfer listesi kapasitesi
 
 let token = 0;
+let diagToken = 0;   // genel teşhis taraması (diagStop ile artar)
 
 // ---------------------------------------------------------------- sabit veri (görsel + isim sözlükleri)
 const META_TTL = 7 * 24 * 60 * 60 * 1000;
@@ -809,12 +810,38 @@ chrome.runtime.onMessage.addListener((msg, _s, reply) => {
         const set = await setById(msg.id);
         const crit = diagCrit(set);
         if (!crit) return { ok: false, error: T('bg.unsupported', { name: set.name }) };
-        const { gallerySummary = {} } = await chrome.storage.local.get('gallerySummary');
+        const { gallerySummary = {}, galleryToGrade = {} } = await chrome.storage.local.get(['gallerySummary', 'galleryToGrade']);
+        const { settings } = await load();
+        const cat = await loadCatalog();
         const s = gallerySummary[set.id];
         let r;
         try { r = await diagnoseConcept(crit); } catch (e) { r = { error: e?.message || String(e) }; }
         const app = 'eklenti v' + chrome.runtime.getManifest().version;
-        return { ok: true, text: diagReport(r, { app, set: set.name, crit, saved: s ? { c: s.collected, n: s.total, sc: s.score } : null }) };
+        const okSets = cat.sets.filter((x) => !x.filter?.unsupported);
+        const overview = diagOverview(gallerySummary, okSets, {
+          katalog: cat.updated || null, alimSonrasi: settings.afterBuy || 'relist', notlandirilacak: Object.keys(galleryToGrade).length,
+        });
+        // Genel tarama: bütün setlerin bütün takımları/ligleri, yalnız sayılar (ilerleme galleryDiagRun'da)
+        let scan = null;
+        if (msg.all) {
+          const my = ++diagToken;
+          const rows = [];
+          for (const [i, x] of okSets.entries()) {
+            if (my !== diagToken) break;
+            await chrome.storage.local.set({ galleryDiagRun: { i, n: okSets.length, at: Date.now() } });
+            try { rows.push({ set: x, parts: (await diagnoseConcept(diagCrit(x), false)).parts || [] }); }
+            catch (e) { rows.push({ set: x, error: String(e?.message || e).slice(0, 80) }); }
+            await setGap();
+          }
+          await chrome.storage.local.remove('galleryDiagRun');
+          scan = diagScan(rows, gallerySummary) + (rows.length < okSets.length ? `\n  (durduruldu: ${rows.length}/${okSets.length})` : '');
+        }
+        return { ok: true, text: diagReport(r, { app, set: set.name, overview, scan, sets: diagSetList(gallerySummary, okSets), saved: s ? { c: s.collected, n: s.total, sc: s.score } : null }) };
+      }
+      case 'diagStop': diagToken++; return { ok: true };
+      case 'diagEstimate': {   // genel tarama onayı için: set ve istek sayısı
+        const okSets = (await loadCatalog()).sets.filter((x) => !x.filter?.unsupported);
+        return { ok: true, sets: okSets.length, reqs: okSets.reduce((a, x) => a + (diagCrit(x)?.length || 0), 0) };
       }
       case 'catalog': {
         // Galeri ekranı açılınca: günlük güncelleme kontrolü + görsel kökü için sözlük
