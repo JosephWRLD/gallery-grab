@@ -75,6 +75,9 @@ test('priceCap: canlı ×1,25; canlı yoksa fut.gg ×2 / +2.000; kullanıcı sı
   assert.equal(G.priceCap({ price: 100000 }, 50000), 50000);          // kullanıcı sınırı
   assert.equal(G.priceCap({}, 0), 0);                                  // referans yok, ayar yok → sınır yok
   assert.equal(G.priceCap({}, 30000), 30000);
+  // varsayılan 0: yalnız otomatik sınır (57.000 canlı → 71.250 → 71.000)
+  assert.equal(G.MAX_CARD_DEFAULT, 0);
+  assert.equal(G.priceCap({ live: 57000 }), 71000);
   // sınır her zaman canlı fiyatın altına inmez
   for (const live of [200, 350, 999, 1000, 4321, 49999, 50000, 123456]) assert.ok(G.priceCap({ live }, 0) >= live, String(live));
 });

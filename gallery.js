@@ -239,7 +239,7 @@ function renderBar() {
   $('coins').textContent = fmt(run.coins);
   $('spent').textContent = fmt(state.galleryBuySpent || 0);
   if (document.activeElement !== $('budget')) $('budget').value = st.galleryBudget || '';
-  if (document.activeElement !== $('maxCard')) $('maxCard').value = st.maxCard ?? 50000;
+  if (document.activeElement !== $('maxCard')) $('maxCard').value = st.maxCard ?? 0;
   $('afterBuy').value = st.afterBuy || 'relist';
   const rl = st.relist || {};
   $('relistBox').hidden = (st.afterBuy || 'relist') !== 'relist';
