@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gallery Grab
 // @namespace    https://github.com/JosephWRLD/gallery-grab
-// @version      2.1.5
+// @version      2.1.6
 // @description  FC Web App: FUT Galeri setleri, notlar, fut.gg çözümleri, token planlayıcı ve eksik kartları alma; oyuncu listesinden en ucuz kart alma
 // @author       JosephWRLD — Discord: yusuflnx
 // @license      PolyForm-Noncommercial-1.0.0 (ticari kullanım/satış yasak)
@@ -124,6 +124,7 @@
             if (lk === 'x-ut-sid') session.sid = v;
             else if (!IGNORED.has(lk)) session.headers[k] = v;
           }
+          if (/\/ut\/game\/[^?]*\/(transfermarket|tradepile|watchlist)\b/.test(String(c.url))) this.addEventListener('load', readCollected);
         }
         return xSend.apply(this, a);
       };
@@ -140,6 +141,21 @@
       } catch (_) {}
     }, 4000);
   })();
+
+  // Bazı Web App sürümlerinde (Opera'da görüldü) kart nesnesi isCollected taşımıyor: pazar rozeti için
+  // EA'nın ham pazar yanıtından okunur (kart id → isCollected)
+  const collected = new Map();
+  function readCollected() {
+    try {
+      const j = this.responseType === 'json' ? this.response : JSON.parse(this.responseText || 'null');
+      for (const a of j?.auctionInfo || []) {
+        const it = a?.itemData;
+        if (it?.id != null && typeof it.isCollected === 'boolean') collected.set(Number(it.id), it.isCollected);
+      }
+      if (collected.size > 5000) collected.clear();
+    } catch (_) {}
+  }
+  const isCol = (item) => (typeof item?.isCollected === 'boolean' ? item.isCollected : collected.get(Number(item?.id)));
 
   // FC 27'de alan adı utasSession (eski sürümlerde sessionUtas); getUtasSession() yedek
   function liveSid() { try { return (W.services?.Authentication?.utasSession?.id || W.services?.Authentication?.getUtasSession?.()?.id || W.services?.Authentication?.sessionUtas?.id || null); } catch (_) { return null; } }
@@ -1678,6 +1694,12 @@
       try {
         if (!W.services?.Item?.searchConceptItems || !W.UTSearchCriteriaDTO) { finish({ error: 'not-ready' }); return; }
         const t0 = performance.now();
+        // Kayıt tamponu doluysa getEntriesByType yeni isteği göstermez; gözlemci her durumda görür
+        let seen = null, po = null;
+        try {
+          po = new W.PerformanceObserver((l) => { for (const e of l.getEntries()) if (/\/defid\?/.test(e.name)) seen = e; });
+          po.observe({ type: 'resource' });
+        } catch (_) {}
         const c = new W.UTSearchCriteriaDTO();
         c.type = W.SearchType.PLAYER;
         c.count = 100;
@@ -1688,6 +1710,8 @@
         const ref = {};
         W.services.Item.searchConceptItems(c).observe(ref, async (o, res) => {
           o.unobserve(ref);
+          await new Promise((r) => setTimeout(r, 50));
+          try { po?.disconnect(); } catch (_) {}
           const items = res?.response?.items || [];
           const obj = {
             success: !!res?.success, status: res?.status ?? null, n: items.length,
@@ -1696,13 +1720,15 @@
             first: items[0] ? fields(items[0]) : null,
             firstCollected: (() => { const i = items.find((x) => x.isCollected); return i ? fields(i) : null; })(),
           };
-          // Genel taramada yalnız sayılar: ham yanıt isteği atılmaz
-          if (!withRaw) { finish({ obj: { success: obj.success, status: obj.status, n: obj.n, yes: items.filter((i) => i.isCollected === true).length } }); return; }
+          // Genel taramada yalnız sayılar: nesne isCollected taşıyorsa ham yanıt isteği atılmaz,
+          // taşımıyorsa (Opera'da görüldü) sayım ham yanıttan yapılır (eşitlemeyle aynı yol)
+          const hasField = items.some((i) => typeof i.isCollected === 'boolean');
+          if (!withRaw && (hasField || !items.length)) { finish({ obj: { success: obj.success, status: obj.status, n: obj.n, yes: items.filter((i) => i.isCollected === true).length } }); return; }
           // Aynı isteğin ham yanıtı: Web App'in attığı /defid adresi ağ kayıtlarından
           let raw = null;
           try {
             const all = performance.getEntriesByType('resource');
-            let e = all.filter((x) => x.startTime >= t0 - 5 && /\/defid\b/.test(x.name)).pop();
+            let e = seen || all.filter((x) => x.startTime >= t0 - 5 && /\/defid\b/.test(x.name)).pop();
             // Kayıt yoksa (Web App önbellekten verdi ya da tarayıcının kayıt tamponu eşitlemede doldu):
             // adresi daha önceki bir UT isteğinin kökünden aynı biçimde kur
             if (!e && crit.club) {
@@ -1714,6 +1740,11 @@
               const r = await W.fetch(e.name, { headers: { 'X-UT-SID': sid() || '', Accept: 'application/json' }, credentials: 'omit' });
               const j = await r.json().catch(() => null);
               const arr = !j ? [] : Array.isArray(j) ? j : j.itemData || j.items || Object.values(j).find(Array.isArray) || [];
+              if (!withRaw) {
+                const yes = r.ok ? arr.filter((i) => i?.isCollected === true).length : null;
+                finish({ obj: { success: obj.success, status: obj.status, n: obj.n, yes, src: 'raw' }, ...(r.ok ? {} : { error: `raw HTTP ${r.status}` }) });
+                return;
+              }
               const keys = new Set(arr.flatMap((i) => Object.keys(i || {})));
               raw = {
                 status: r.status, built: !!e.built, query: e.name.split('?')[1]?.replace(/[^\w=&,.-]/g, '').slice(0, 160) || '',
@@ -1724,6 +1755,7 @@
               };
             }
           } catch (err) { raw = { error: String(err).slice(0, 120) }; }
+          if (!withRaw) { finish({ obj: { success: obj.success, status: obj.status, n: obj.n, yes: null }, error: raw?.error || 'raw' }); return; }
           finish({ obj, raw });
         });
       } catch (err) { finish({ error: String(err).slice(0, 120) }); }
@@ -1763,12 +1795,14 @@
   // Genel tarama raporu: rows = [{ set, parts } | { set, error }], her setin her takımı/ligi canlı sorgulanmış (ham yanıt yok).
   // Satır: "Arsenal 9+9=18/20 (kart 28+28)"; kayıtlı özetten farklıysa "≠kayıtlı N", ilk sayfa dolduysa (100 kart) "+".
   function diagScan(rows, summary = {}) {
-    let req = 0, err = 0, yes = 0, diff = 0, empty = 0;
+    let req = 0, err = 0, yes = 0, diff = 0, empty = 0, fromRaw = 0;
     const errs = {};
     const addErr = (k) => { err++; errs[k] = (errs[k] || 0) + 1; };
     const lines = rows.map(({ set, parts = [], error }) => {
       if (error) { addErr(error); return `${set.name} HATA ${error}`; }
       req += parts.length;
+      const r = parts.filter((p) => p.obj?.src === 'raw').length;   // ham yanıttan sayılan (nesnede isCollected yok)
+      req += r; fromRaw += r;
       const bad = parts.filter((p) => p.error || !p.obj?.success);
       for (const p of bad) addErr(p.error || `durum ${p.obj?.status}`);
       const ys = parts.map((p) => p.obj?.yes ?? 0);
@@ -1784,7 +1818,7 @@
       return `${set.name} ${split}${sum}${full}/${set.required} (kart ${cards})` +
         (differs ? ` ≠kayıtlı ${saved}` : '') + (bad.length ? ` HATA×${bad.length}` : '');
     });
-    const head = { set: rows.length, istek: req, hata: err, bosSet: empty, toplanan: yes, kayitliylaFarkli: diff, hatalar: errs };
+    const head = { set: rows.length, istek: req, hata: err, bosSet: empty, toplanan: yes, kayitliylaFarkli: diff, hamYanittan: fromRaw, hatalar: errs };
     return ['', `Canlı tarama: ${JSON.stringify(head)}`, ...lines.map((l) => '  ' + l)].join('\n');
   }
 
@@ -1935,18 +1969,47 @@
         if (crit.club) c.club = crit.club;
         if (crit.league) c.league = crit.league;
         if (crit.rarities) c.rarities = crit.rarities;
+        // Web App'in bu arama için attığı /defid adresi (kayıt tamponu dolu olsa da gözlemci görür)
+        let url = null, po = null;
+        try {
+          po = new W.PerformanceObserver((l) => { for (const e of l.getEntries()) if (/\/defid\?/.test(e.name)) url = e.name; });
+          po.observe({ type: 'resource' });
+        } catch (_) {}
         const obs = W.services.Item.searchConceptItems(c);
         const ref = {};
         let done = false;
-        const finish = (f) => { if (!done) { done = true; f(); } };
-        obs.observe(ref, (o, res) => {
+        const finish = (f) => { if (!done) { done = true; try { po?.disconnect(); } catch (_) {} f(); } };
+        // Bazı Web App sürümlerinde (Opera'da görüldü) kart nesnesi isCollected/gradingScore taşımıyor ama EA'nın
+        // ham yanıtında var: o zaman aynı isteğin ham JSON'undan oku. Dönen: resourceId/id → ham kart
+        const rawMap = async (n) => {
+          await sleep(50);
+          if (!url && crit.club) url = `${resolveBase()}/defid?count=${count}&sort=desc&start=${offset}&type=player&team=${crit.club}`;
+          if (!url) return null;
+          const r = await W.fetch(url, { headers: { 'X-UT-SID': liveSid() || '', Accept: 'application/json' }, credentials: 'omit' });
+          if (!r.ok) return null;
+          const j = await r.json().catch(() => null);
+          const arr = !j ? [] : Array.isArray(j) ? j : j.itemData || j.items || [];
+          const m = new Map();
+          for (const x of arr) for (const k of [x?.resourceId, x?.id]) if (k != null) m.set(Number(k), x);
+          return { m, arr: arr.length === n ? arr : null };
+        };
+        obs.observe(ref, async (o, res) => {
           o.unobserve(ref);
           if (!res?.success) { finish(() => reject(new ApiError(res?.status ?? 0, null, `Galeri araması başarısız (HTTP ${res?.status})`))); return; }
-          const items = (res.response?.items || []).map((i) => ({
-            def: Number(i.definitionId), name: i._staticData?.name || '', r: Number(i.rating) || 0,
-            rare: Number(i.rareflag) || 0, team: Number(i.teamId) || null, league: Number(i.leagueId) || null,
-            pos: i.preferredPosition || null, col: !!i.isCollected, sc: Number(i.gradingScore) || 0, tradable: !i.untradeable,
-          }));
+          const src = res.response?.items || [];
+          let raw = null;
+          if (src.length && !src.some((i) => typeof i.isCollected === 'boolean')) {
+            try { raw = await rawMap(src.length); } catch (_) {}
+          }
+          const items = src.map((i, idx) => {
+            const x = raw ? raw.m.get(Number(i.definitionId)) || raw.arr?.[idx] || null : null;
+            return {
+              def: Number(i.definitionId), name: i._staticData?.name || '', r: Number(i.rating) || 0,
+              rare: Number(i.rareflag) || 0, team: Number(i.teamId) || null, league: Number(i.leagueId) || null,
+              pos: i.preferredPosition || null, col: x ? x.isCollected === true : !!i.isCollected,
+              sc: Number(x ? x.gradingScore : i.gradingScore) || 0, tradable: !i.untradeable,
+            };
+          });
           finish(() => resolve(items));
         });
         setTimeout(() => finish(() => reject(new ApiError(0, null, 'Galeri araması zaman aşımı'))), 20000);
@@ -2235,6 +2298,12 @@
   // ---------------------------------------------------------------- transfer pazarı rozeti
   (function badge() {
     const B = 'fcg-collected';
+    const paint = (root, item, col) => {
+      const show = col && !!item?._auction?.tradeId;
+      let b = root.querySelector(':scope > .' + B);
+      if (show && !b) { b = h('div', { class: B, title: 'Gallery Grab: bu kart galeride zaten toplandı' }, [h('span', { text: '✓ Galeride' })]); root.append(b); }
+      else if (!show && b) b.remove();
+    };
     const tryPatch = () => {
       const V = W.UTPlayerItemView;
       if (!V?.prototype?.renderItem) return false;
@@ -2245,10 +2314,14 @@
         try {
           const root = this.getRootElement?.();
           if (root) {
-            const show = item?.isCollected === true && !!item?._auction?.tradeId;
-            let b = root.querySelector(':scope > .' + B);
-            if (show && !b) { b = h('div', { class: B, title: 'Gallery Grab: bu kart galeride zaten toplandı' }, [h('span', { text: '✓ Galeride' })]); root.append(b); }
-            else if (!show && b) b.remove();
+            const col = isCol(item);
+            // yanıt henüz okunmadıysa: aynı kart hâlâ bu görünümdeyse kısa süre sonra yeniden bak
+            if (col === undefined && item?._auction?.tradeId) {
+              const view = this;
+              setTimeout(() => { if (view.__fcgItem === item && isCol(item) === true) paint(root, item, true); }, 400);
+            }
+            this.__fcgItem = item;
+            paint(root, item, col === true);
           }
         } catch (_) {}
         return r;

@@ -43,7 +43,10 @@
     return xSet.call(this, k, v);
   };
   XMLHttpRequest.prototype.send = function (...a) {
-    if (this.__fcg) ingest(this.__fcg.url, this.__fcg.headers);
+    if (this.__fcg) {
+      ingest(this.__fcg.url, this.__fcg.headers);
+      if (/\/ut\/game\/[^?]*\/(transfermarket|tradepile|watchlist)\b/.test(String(this.__fcg.url))) this.addEventListener('load', readCollected);
+    }
     return xSend.apply(this, a);
   };
 
@@ -52,6 +55,21 @@
 
   // Transfer pazarı rozeti: EA her ilan kartında isCollected taşıyor (galeride zaten toplanmış kart).
   // UTPlayerItemView.renderItem sarılır; görünümler yeniden kullanıldığı için rozet her çizimde güncellenir.
+  // Bazı Web App sürümlerinde (Opera'da görüldü) kart nesnesi isCollected taşımıyor: o zaman EA'nın ham
+  // pazar yanıtından okunur (kart id → isCollected). Görünüm yanıttan önce çizilirse kısa süre sonra yeniden bakılır.
+  const collected = new Map();
+  function readCollected() {
+    try {
+      const j = this.responseType === 'json' ? this.response : JSON.parse(this.responseText || 'null');
+      for (const a of j?.auctionInfo || []) {
+        const it = a?.itemData;
+        if (it?.id != null && typeof it.isCollected === 'boolean') collected.set(Number(it.id), it.isCollected);
+      }
+      if (collected.size > 5000) collected.clear();
+    } catch (_) {}
+  }
+  const isCol = (item) => (typeof item?.isCollected === 'boolean' ? item.isCollected : collected.get(Number(item?.id)));
+
   const BADGE = 'fcg-collected';
   const patchBadge = () => {
     const V = window.UTPlayerItemView;
@@ -62,17 +80,14 @@
       try {
         const root = this.getRootElement?.();
         if (root) {
-          const show = item?.isCollected === true && !!item?._auction?.tradeId;
-          let b = root.querySelector(':scope > .' + BADGE);
-          if (show && !b) {
-            b = document.createElement('div');
-            b.className = BADGE;
-            const sp = document.createElement('span');   // küçük kartta CSS yalnız ✓ gösterir
-            sp.textContent = '✓ Galeride';
-            b.appendChild(sp);
-            b.title = 'Gallery Grab: bu kart galeride zaten toplandı';
-            root.appendChild(b);
-          } else if (!show && b) b.remove();
+          const col = isCol(item);
+          if (col === undefined && item?._auction?.tradeId) {
+            // yanıt henüz okunmadıysa: aynı kart hâlâ bu görünümdeyse yeniden dene
+            const view = this;
+            setTimeout(() => { if (view.__fcgItem === item && isCol(item) === true) paint(root, item, true); }, 400);
+          }
+          this.__fcgItem = item;
+          paint(root, item, col === true);
         }
       } catch (_) {}
       return r;
@@ -80,6 +95,19 @@
     V.prototype.__fcgBadge = true;
     return true;
   };
+  function paint(root, item, collectedNow) {
+    const show = collectedNow && !!item?._auction?.tradeId;
+    let b = root.querySelector(':scope > .' + BADGE);
+    if (show && !b) {
+      b = document.createElement('div');
+      b.className = BADGE;
+      const sp = document.createElement('span');   // küçük kartta CSS yalnız ✓ gösterir
+      sp.textContent = '✓ Galeride';
+      b.appendChild(sp);
+      b.title = 'Gallery Grab: bu kart galeride zaten toplandı';
+      root.appendChild(b);
+    } else if (!show && b) b.remove();
+  }
   const badgeTimer = setInterval(() => { if (patchBadge()) clearInterval(badgeTimer); }, 1000);
 
   // Yedek: Web App'in kendi servis nesnesinden SID oku
