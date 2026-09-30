@@ -2,9 +2,9 @@ import { api, ApiError, parseCoins } from './lib/ea-api.js';
 import { searchPlayers, fetchMeta } from './lib/players.js';
 import { imgUrls } from './lib/img.js';
 import { prevPrice } from './lib/pricing.js';
-import { fetchSetDefs } from './lib/gallery-api.js';
+import { fetchSetDefs, diagnoseConcept } from './lib/gallery-api.js';
 import { loadCatalog, refreshCatalog } from './lib/catalog.js';
-import { summarise, priceCandidates, cheapestFill, baseOf, syncEstimate, planFromTier, fmtDur, relistPrice, buyTargets, MAX_CARD_DEFAULT } from './lib/gallery.js';
+import { summarise, priceCandidates, cheapestFill, baseOf, syncEstimate, planFromTier, fmtDur, relistPrice, buyTargets, MAX_CARD_DEFAULT, diagCrit, diagReport } from './lib/gallery.js';
 import { makeT, detectLang, localeOf } from './lib/i18n.js';
 
 // Galeri durum mesajlarının dili (Galeri ekranındaki TR/EN seçimi; yoksa tarayıcı dili)
@@ -804,6 +804,17 @@ chrome.runtime.onMessage.addListener((msg, _s, reply) => {
         const v = ['relist', 'tradepile', 'keep'].includes(msg.value) ? msg.value : 'relist';
         await chrome.storage.local.set({ gallerySettings: { ...settings, afterBuy: v } });
         return { ok: true };
+      }
+      case 'diagnose': {   // "Teşhis": toplanma bilgisi gelmiyorsa EA'nın ne döndürdüğünü raporlar (alım yok)
+        const set = await setById(msg.id);
+        const crit = diagCrit(set);
+        if (!crit) return { ok: false, error: T('bg.unsupported', { name: set.name }) };
+        const { gallerySummary = {} } = await chrome.storage.local.get('gallerySummary');
+        const s = gallerySummary[set.id];
+        let r;
+        try { r = await diagnoseConcept(crit); } catch (e) { r = { error: e?.message || String(e) }; }
+        const app = 'eklenti v' + chrome.runtime.getManifest().version;
+        return { ok: true, text: diagReport(r, { app, set: set.name, crit, saved: s ? { c: s.collected, n: s.total, sc: s.score } : null }) };
       }
       case 'catalog': {
         // Galeri ekranı açılınca: günlük güncelleme kontrolü + görsel kökü için sözlük

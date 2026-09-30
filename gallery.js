@@ -283,6 +283,43 @@ function openSyncConfirm() {
   $('mdBox').className = 'box';
   $('md').hidden = false;
 }
+// ---------------------------------------------------------------- teşhis
+// Kullanıcı oyunda notlandırdığı bir seti seçer; EA'nın döndürdüğü toplanma bilgisi rapor olarak kopyalanır.
+let diagId = null;
+function openDiag() {
+  const sets = CAT.sets.filter((s) => !s.filter?.unsupported).slice().sort((a, b) => a.name.localeCompare(b.name, loc));
+  const sums = state.gallerySummary || {};
+  if (diagId == null) diagId = (sets.find((s) => s.filter?.teams) || sets[0])?.id ?? null;
+  const out = h('textarea', { class: 'diag', readOnly: true, placeholder: t('diag.ph') });
+  const run = h('button', { class: 'b', text: t('diag.run') });
+  const copy = h('button', { class: 'g', text: t('diag.copy'), disabled: true });
+  run.onclick = async () => {
+    run.disabled = true;
+    out.value = t('diag.running');
+    const r = await send({ type: 'diagnose', id: diagId }).catch((e) => ({ ok: false, error: e.message }));
+    out.value = r?.ok ? r.text : t('diag.fail', { e: r?.error || t('error') });
+    run.disabled = false;
+    copy.disabled = !r?.ok;
+  };
+  copy.onclick = async () => {
+    try { await navigator.clipboard.writeText(out.value); copy.textContent = t('diag.copied'); }
+    catch (_) { out.select(); }
+    setTimeout(() => { copy.textContent = t('diag.copy'); }, 1500);
+  };
+  $('mdBox').replaceChildren(
+    h('h3', { text: t('diag.title') }),
+    h('div', { class: 'note', text: t('diag.body') }),
+    h('label', { class: 'kv', style: 'display:block;margin-top:10px' }, [
+      t('diag.set') + ' ',
+      h('select', { onchange: (e) => { diagId = Number(e.target.value); } },
+        sets.map((s) => h('option', { value: String(s.id), selected: s.id === diagId, text: s.name + (sums[s.id] ? ` (${sums[s.id].collected}/${sums[s.id].total})` : '') }))),
+    ]),
+    out,
+    h('div', { class: 'row' }, [h('button', { class: 'g', text: t('close'), onclick: closeModal }), copy, run]),
+  );
+  $('mdBox').className = 'box wide';
+  $('md').hidden = false;
+}
 function closeModal() { $('md').hidden = true; }
 $('md').addEventListener('click', (e) => { if (e.target === $('md')) closeModal(); });
 
@@ -551,6 +588,7 @@ $('relPct').replaceChildren(...Array.from({ length: 41 }, (_, i) => i - 20).map(
 const sendRelist = () => send({ type: 'setRelist', value: { base: $('relBase').value, pct: Number($('relPct').value), dur: Number($('relDur').value) } });
 for (const id of ['relBase', 'relPct', 'relDur']) $(id).addEventListener('change', sendRelist);
 $('syncAll').addEventListener('click', openSyncConfirm);
+$('diag').addEventListener('click', openDiag);
 $('stop').addEventListener('click', () => send({ type: 'stop' }));
 $('resetSpent').addEventListener('click', () => send({ type: 'resetGallerySpent' }));
 $('refreshCoins').addEventListener('click', async () => {
