@@ -292,15 +292,40 @@ function openDiag() {
   if (diagId == null) diagId = (sets.find((s) => s.filter?.teams) || sets[0])?.id ?? null;
   const out = h('textarea', { class: 'diag', readOnly: true, placeholder: t('diag.ph') });
   const run = h('button', { class: 'b', text: t('diag.run') });
+  const all = h('button', { class: 'g', text: t('diag.all'), title: t('diag.all.title') });
   const copy = h('button', { class: 'g', text: t('diag.copy'), disabled: true });
-  run.onclick = async () => {
+  let armed = false, poll = null;
+  const go = async (full) => {
     run.disabled = true;
     out.value = t('diag.running');
-    const r = await send({ type: 'diagnose', id: diagId }).catch((e) => ({ ok: false, error: e.message }));
+    if (full) {
+      all.textContent = t('diag.stop');
+      all.onclick = () => send({ type: 'diagStop' });
+      poll = setInterval(async () => {
+        const { galleryDiagRun: p } = await chrome.storage.local.get('galleryDiagRun');
+        if (p) out.value = t('diag.progress', { i: p.i + 1, n: p.n });
+      }, 1000);
+    }
+    const r = await send({ type: 'diagnose', id: diagId, all: full }).catch((e) => ({ ok: false, error: e.message }));
+    clearInterval(poll);
     out.value = r?.ok ? r.text : t('diag.fail', { e: r?.error || t('error') });
     run.disabled = false;
     copy.disabled = !r?.ok;
+    armed = false;
+    all.textContent = t('diag.all');
+    all.onclick = arm;
   };
+  run.onclick = () => go(false);
+  // Genel tarama iki adımlı: önce süre tahmini, ikinci tıkta başlar
+  const arm = async () => {
+    if (armed) return go(true);
+    const e = await send({ type: 'diagEstimate' }).catch(() => null);
+    if (!e?.ok) return;
+    armed = true;
+    all.textContent = t('diag.all.confirm', { d: fmtDur(e.reqs * 1.3 + e.sets * 0.5, t) });
+    out.value = t('diag.all.note', { sets: e.sets, reqs: e.reqs });
+  };
+  all.onclick = arm;
   copy.onclick = async () => {
     try { await navigator.clipboard.writeText(out.value); copy.textContent = t('diag.copied'); }
     catch (_) { out.select(); }
@@ -315,12 +340,12 @@ function openDiag() {
         sets.map((s) => h('option', { value: String(s.id), selected: s.id === diagId, text: s.name + (sums[s.id] ? ` (${sums[s.id].collected}/${sums[s.id].total})` : '') }))),
     ]),
     out,
-    h('div', { class: 'row' }, [h('button', { class: 'g', text: t('close'), onclick: closeModal }), copy, run]),
+    h('div', { class: 'row' }, [h('button', { class: 'g', text: t('close'), onclick: closeModal }), all, copy, run]),
   );
   $('mdBox').className = 'box wide';
   $('md').hidden = false;
 }
-function closeModal() { $('md').hidden = true; }
+function closeModal() { $('md').hidden = true; send({ type: 'diagStop' }).catch(() => {}); }   // açık genel tarama varsa durur
 $('md').addEventListener('click', (e) => { if (e.target === $('md')) closeModal(); });
 
 // ---------------------------------------------------------------- detay

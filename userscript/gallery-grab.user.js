@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gallery Grab
 // @namespace    https://github.com/JosephWRLD/gallery-grab
-// @version      2.1.3
+// @version      2.1.4
 // @description  FC Web App: FUT Galeri setleri, notlar, fut.gg çözümleri, token planlayıcı ve eksik kartları alma; oyuncu listesinden en ucuz kart alma
 // @author       JosephWRLD — Discord: yusuflnx
 // @license      PolyForm-Noncommercial-1.0.0 (ticari kullanım/satış yasak)
@@ -721,6 +721,12 @@
     'diag.copied': '✓ Kopyalandı',
     'diag.ph': 'Rapor burada görünecek',
     'diag.fail': 'Teşhis çalışmadı: {e}',
+    'diag.all': 'Genel tarama (tümü)',
+    'diag.all.title': "Bütün setlerin bütün takımlarını/liglerini EA'dan tek tek sorgular ve hepsini tek raporda toplar (alım yapmaz)",
+    'diag.all.confirm': 'Başlat (~{d})',
+    'diag.all.note': "Genel tarama {sets} set için {reqs} istek atar; eşitleme kadar sürer. Başlatmak için düğmeye tekrar bas. Bu sırada Web App'te işlem yapma.",
+    'diag.progress': 'Taranıyor… {i}/{n} set',
+    'diag.stop': 'Durdur',
     'sort': 'Sırala',
     'show': 'Göster',
     'toList': 'Oyuncu listesi →',
@@ -995,6 +1001,12 @@
     'diag.copied': '✓ Copied',
     'diag.ph': 'The report will appear here',
     'diag.fail': 'Diagnose failed: {e}',
+    'diag.all': 'Full scan (all)',
+    'diag.all.title': "Queries every team/league of every set from EA one by one and puts it all in one report (buys nothing)",
+    'diag.all.confirm': 'Start (~{d})',
+    'diag.all.note': "The full scan sends {reqs} requests for {sets} sets; it takes about as long as a sync. Press the button again to start. Don't use the Web App meanwhile.",
+    'diag.progress': 'Scanning… {i}/{n} sets',
+    'diag.stop': 'Stop',
     'sort': 'Sort',
     'show': 'Show',
     'toList': 'Player list →',
@@ -1591,11 +1603,13 @@
 
   // ---------------------------------------------------------------- teşhis
   // "Eşitliyor ama her set 0/N" sorunu için: Web App'in konsept aramasının döndürdüğü nesne + aynı isteğin ham JSON'u.
-  // Sayfa bağlamında çalışır (eklentide executeScript MAIN, userscript'te unsafeWindow). executeScript fonksiyonu
-  // kopyaladığı için kendi içinde bağımsız olmalı. Kimlik bilgisi (persona, e-posta, SID değeri) döndürmez.
-  function diagProbe(crit) {
+  // Setin bütün takımları/ligleri sırayla sorgulanır. Sayfa bağlamında çalışır (eklentide executeScript MAIN,
+  // userscript'te unsafeWindow). executeScript fonksiyonu kopyaladığı için kendi içinde bağımsız olmalı.
+  // Kimlik bilgisi (persona, e-posta, SID değeri) döndürmez; kart alanları oyuncu verisidir.
+  function diagProbe(crits, withRaw = true) {
     /* global unsafeWindow */
     const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+    const list = Array.isArray(crits) ? crits : [crits];
     const RX = /collect|grad|galler|owned|loan|untrad/i;
     const val = (v) => {
       if (typeof v === 'function') return 'fn';
@@ -1612,16 +1626,19 @@
       }
       return out;
     };
-    // Aynı alanın öğeler arasındaki değer dağılımı
+    // Aynı alanın öğeler arasındaki değer dağılımı (en sık 6 değer)
     const dist = (items, get) => {
       const m = {};
       for (const it of items) { let k; try { k = val(get(it)); } catch (_) { k = 'err'; } m[k] = (m[k] || 0) + 1; }
-      return m;
+      const e = Object.entries(m).sort((a, b) => b[1] - a[1]);
+      const out = Object.fromEntries(e.slice(0, 6));
+      if (e.length > 6) out['…'] = e.length - 6;
+      return out;
     };
     const methods = (o) => {
       const out = new Set();
       for (let p = o, d = 0; p && p !== Object.prototype && d < 5; p = Object.getPrototypeOf(p), d++) {
-        for (const k of Object.getOwnPropertyNames(p)) if (/collect|galler|grad|concept/i.test(k)) out.add(k);
+        for (const k of Object.getOwnPropertyNames(p)) if (/collect|galler|grad|concept|album|progress/i.test(k)) out.add(k);
       }
       return [...out];
     };
@@ -1631,12 +1648,26 @@
       browser: /OPR\//.test(ua) ? 'Opera' : /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : 'other',
       path: location.pathname.replace(/[^/a-z-]/gi, '').slice(0, 60),
       sid: !!sid(),
-      services: Object.keys(W.services || {}).filter((k) => /collect|galler|item|club/i.test(k)),
+      services: Object.keys(W.services || {}),
       itemMethods: methods(W.services?.Item),
     };
-    return new Promise((resolve) => {
+    // Ham yanıtta toplanmış ve toplanmamış kartlarda değer kümesi hiç kesişmeyen alanlar (toplanmayla ilişkili olabilir)
+    const splitKeys = (arr) => {
+      const yes = arr.filter((i) => i?.isCollected === true), no = arr.filter((i) => i?.isCollected !== true);
+      if (!yes.length || !no.length) return null;
+      const keys = new Set(arr.flatMap((i) => Object.keys(i || {})));
+      const out = {};
+      for (const k of keys) {
+        if (k === 'isCollected') continue;
+        const a = new Set(yes.map((i) => val(i[k]))), b = new Set(no.map((i) => val(i[k])));
+        if (a.size + b.size === arr.length) continue;   // her kartta farklı (kimlik vb.) — anlamsız
+        if ([...a].every((v) => !b.has(v))) out[k] = { toplanan: [...a].slice(0, 3), diger: [...b].slice(0, 3) };
+      }
+      return out;
+    };
+    const one = (crit) => new Promise((resolve) => {
       let done = false;
-      const finish = (v) => { if (!done) { done = true; resolve({ env, ...v }); } };
+      const finish = (v) => { if (!done) { done = true; resolve({ crit, ...v }); } };
       setTimeout(() => finish({ error: 'timeout' }), 25000);
       try {
         if (!W.services?.Item?.searchConceptItems || !W.UTSearchCriteriaDTO) { finish({ error: 'not-ready' }); return; }
@@ -1659,21 +1690,31 @@
             first: items[0] ? fields(items[0]) : null,
             firstCollected: (() => { const i = items.find((x) => x.isCollected); return i ? fields(i) : null; })(),
           };
+          // Genel taramada yalnız sayılar: ham yanıt isteği atılmaz
+          if (!withRaw) { finish({ obj: { success: obj.success, status: obj.status, n: obj.n, yes: items.filter((i) => i.isCollected === true).length } }); return; }
           // Aynı isteğin ham yanıtı: Web App'in attığı /defid adresi ağ kayıtlarından
           let raw = null;
           try {
-            const e = performance.getEntriesByType('resource').filter((x) => x.startTime >= t0 - 5 && /\/defid\b/.test(x.name)).pop();
+            const all = performance.getEntriesByType('resource');
+            let e = all.filter((x) => x.startTime >= t0 - 5 && /\/defid\b/.test(x.name)).pop();
+            // Kayıt yoksa (Web App önbellekten verdi ya da tarayıcının kayıt tamponu eşitlemede doldu):
+            // adresi daha önceki bir UT isteğinin kökünden aynı biçimde kur
+            if (!e && crit.club) {
+              const base = all.map((x) => x.name.match(/^https:\/\/[^/]+\/ut\/game\/fc\d+\//)?.[0]).find(Boolean);
+              if (base) e = { name: `${base}defid?count=100&sort=desc&start=0&type=player&team=${crit.club}`, built: true };
+            }
             if (!e) raw = { error: 'no-request' };
             else {
               const r = await W.fetch(e.name, { headers: { 'X-UT-SID': sid() || '', Accept: 'application/json' }, credentials: 'omit' });
               const j = await r.json().catch(() => null);
               const arr = !j ? [] : Array.isArray(j) ? j : j.itemData || j.items || Object.values(j).find(Array.isArray) || [];
-              const keys = {};
-              for (const it of arr) for (const k of Object.keys(it || {})) if (RX.test(k)) keys[k] = true;
+              const keys = new Set(arr.flatMap((i) => Object.keys(i || {})));
               raw = {
-                status: r.status, query: e.name.split('?')[1]?.replace(/[^\w=&,.-]/g, '').slice(0, 160) || '',
+                status: r.status, built: !!e.built, query: e.name.split('?')[1]?.replace(/[^\w=&,.-]/g, '').slice(0, 160) || '',
                 top: j && !Array.isArray(j) ? Object.keys(j).slice(0, 10) : [], n: arr.length,
-                fields: Object.fromEntries(Object.keys(keys).map((k) => [k, dist(arr, (i) => i?.[k])])),
+                fields: Object.fromEntries([...keys].filter((k) => RX.test(k)).map((k) => [k, dist(arr, (i) => i?.[k])])),
+                allKeys: [...keys].sort(),
+                split: splitKeys(arr),
               };
             }
           } catch (err) { raw = { error: String(err).slice(0, 120) }; }
@@ -1681,6 +1722,64 @@
         });
       } catch (err) { finish({ error: String(err).slice(0, 120) }); }
     });
+    return (async () => {
+      const parts = [];
+      for (const c of list) {
+        parts.push(await one(c));
+        if (list.length > 1) await new Promise((r) => setTimeout(r, 500 + Math.random() * 500));
+      }
+      return { env, parts };
+    })();
+  }
+
+  // Kayıtlı eşitleme verisinin genel özeti (yeni istek atmaz): summary = gallerySummary, sets = katalog setleri
+  function diagOverview(summary = {}, sets = [], extra = {}) {
+    const rows = sets.map((s) => summary[s.id]).filter(Boolean);
+    const ats = rows.map((r) => r.at).filter(Boolean).sort((a, b) => a - b);
+    const day = (t) => (t ? new Date(t).toISOString().slice(0, 16).replace('T', ' ') : '—');
+    const withC = sets.filter((s) => summary[s.id]?.collected > 0);
+    return {
+      katalogSet: sets.length, esitlenen: rows.length, toplananliSet: withC.length,
+      toplamToplanan: rows.reduce((a, r) => a + (r.collected || 0), 0),
+      enEski: day(ats[0]), enYeni: day(ats.at(-1)),
+      sifir: rows.length - withC.length,
+      ...extra,
+    };
+  }
+
+  // Bütün setlerin kayıtlı toplanan/gereken değeri (istek atmaz), çok olandan aza
+  function diagSetList(summary = {}, sets = []) {
+    return sets.map((s) => ({ s, c: summary[s.id] ? summary[s.id].collected : null }))
+      .sort((a, b) => (b.c ?? -1) - (a.c ?? -1) || a.s.name.localeCompare(b.s.name))
+      .map(({ s, c }) => `${s.name} ${c ?? '?'}/${s.required}`);
+  }
+
+  // Genel tarama raporu: rows = [{ set, parts } | { set, error }], her setin her takımı/ligi canlı sorgulanmış (ham yanıt yok).
+  // Satır: "Arsenal 9+9=18/20 (kart 28+28)"; kayıtlı özetten farklıysa "≠kayıtlı N", ilk sayfa dolduysa (100 kart) "+".
+  function diagScan(rows, summary = {}) {
+    let req = 0, err = 0, yes = 0, diff = 0, empty = 0;
+    const errs = {};
+    const addErr = (k) => { err++; errs[k] = (errs[k] || 0) + 1; };
+    const lines = rows.map(({ set, parts = [], error }) => {
+      if (error) { addErr(error); return `${set.name} HATA ${error}`; }
+      req += parts.length;
+      const bad = parts.filter((p) => p.error || !p.obj?.success);
+      for (const p of bad) addErr(p.error || `durum ${p.obj?.status}`);
+      const ys = parts.map((p) => p.obj?.yes ?? 0);
+      const sum = ys.reduce((a, b) => a + b, 0);
+      yes += sum;
+      if (parts.every((p) => !p.obj?.n)) empty++;
+      const saved = summary[set.id]?.collected;
+      const differs = saved != null && saved !== Math.min(sum, set.required);
+      if (differs) diff++;
+      const full = parts.some((p) => (p.obj?.n ?? 0) >= 100) ? '+' : '';
+      const split = parts.length > 1 ? `${ys.join('+')}=` : '';
+      const cards = parts.map((p) => p.obj?.n ?? '?').join('+');
+      return `${set.name} ${split}${sum}${full}/${set.required} (kart ${cards})` +
+        (differs ? ` ≠kayıtlı ${saved}` : '') + (bad.length ? ` HATA×${bad.length}` : '');
+    });
+    const head = { set: rows.length, istek: req, hata: err, bosSet: empty, toplanan: yes, kayitliylaFarkli: diff, hatalar: errs };
+    return ['', `Canlı tarama: ${JSON.stringify(head)}`, ...lines.map((l) => '  ' + l)].join('\n');
   }
 
   // Teşhis sonucunu kullanıcının kopyalayıp göndereceği düz metne çevirir
@@ -1688,31 +1787,42 @@
     const j = (x) => (x == null ? '—' : JSON.stringify(x));
     const lines = [
       `Gallery Grab teşhis · ${meta.app || '?'} · ${new Date(meta.at || Date.now()).toISOString()}`,
-      `Set: ${meta.set || '?'} · kriter ${j(meta.crit)} · kayıtlı özet ${j(meta.saved)}`,
+      `Set: ${meta.set || '?'} · kayıtlı özet ${j(meta.saved)}`,
+      `Genel: ${j(meta.overview)}`,
       `Ortam: ${j(r?.env)}`,
     ];
+    if (meta.sets?.length && !meta.scan) lines.push(`Setler (toplanan/gereken, eşitlenmemiş = ?): ${meta.sets.join(' · ')}`);
     if (r?.error) lines.push(`HATA: ${r.error}`);
-    if (r?.obj) {
-      lines.push(`Web App nesnesi: başarı=${r.obj.success} durum=${r.obj.status} kart=${r.obj.n} puan>0=${r.obj.scoreGt0}`);
-      lines.push(`  isCollected dağılımı: ${j(r.obj.isCollected)}`);
-      lines.push(`  ilk kart alanları: ${j(r.obj.first)}`);
-      lines.push(`  toplanmış ilk kart: ${j(r.obj.firstCollected)}`);
-    }
-    if (r?.raw) {
-      if (r.raw.error) lines.push(`Ham yanıt: HATA ${r.raw.error}`);
-      else {
-        lines.push(`Ham yanıt: HTTP ${r.raw.status} kart=${r.raw.n} üst=${j(r.raw.top)}`);
-        lines.push(`  sorgu: ${r.raw.query}`);
-        lines.push(`  alanlar: ${j(r.raw.fields)}`);
+    for (const p of r?.parts || []) {
+      lines.push('', `— kriter ${j(p.crit)}`);
+      if (p.error) { lines.push(`  HATA: ${p.error}`); continue; }
+      if (p.obj) {
+        lines.push(`  Web App nesnesi: başarı=${p.obj.success} durum=${p.obj.status} kart=${p.obj.n} puan>0=${p.obj.scoreGt0}`);
+        lines.push(`  isCollected dağılımı: ${j(p.obj.isCollected)}`);
+        lines.push(`  ilk kart alanları: ${j(p.obj.first)}`);
+        lines.push(`  toplanmış ilk kart: ${j(p.obj.firstCollected)}`);
+      }
+      if (p.raw) {
+        if (p.raw.error) lines.push(`  Ham yanıt: HATA ${p.raw.error}`);
+        else {
+          lines.push(`  Ham yanıt: HTTP ${p.raw.status}${p.raw.built ? ' (adres kuruldu)' : ''} kart=${p.raw.n} üst=${j(p.raw.top)}`);
+          lines.push(`  sorgu: ${p.raw.query}`);
+          lines.push(`  alanlar: ${j(p.raw.fields)}`);
+          lines.push(`  tüm alan adları: ${(p.raw.allKeys || []).join(',')}`);
+          lines.push(`  toplanmayla ayrışan alanlar: ${j(p.raw.split)}`);
+        }
       }
     }
+    if (meta.scan) lines.push(meta.scan);
     return lines.join('\n');
   }
 
-  // Teşhiste varsayılan set: bir takım filtresi olan ilk desteklenen set
+  // Teşhiste sorgulanacak kriterler: setin bütün takımları (ör. Arsenal erkek + kadın) ya da ligleri
   function diagCrit(set) {
     const f = set?.filter || {};
-    return f.teams ? { club: f.teams[0] } : f.leagues ? { league: f.leagues[0] } : f.rarities ? { rarities: f.rarities } : null;
+    if (f.teams?.length) return f.teams.map((club) => ({ club }));
+    if (f.leagues?.length) return f.leagues.map((league) => ({ league }));
+    return f.rarities ? [{ rarities: f.rarities }] : null;
   }
   // @@END lib/gallery.js
 
@@ -2308,24 +2418,45 @@
   }
 
   // Teşhis: kullanıcı oyunda notlandırdığı bir seti seçer; EA'nın döndürdüğü toplanma bilgisi rapor olarak kopyalanır
-  const diag = { id: null, text: '', running: false };
+  const diag = { id: null, text: '', running: false, armed: false, tok: 0 };
   function diagModal() {
     const sets = gal.cat.sets.filter((s) => !s.filter?.unsupported).slice().sort((a, b) => a.name.localeCompare(b.name, LOC));
     if (diag.id == null) diag.id = (sets.find((s) => s.filter?.teams) || sets[0])?.id ?? null;
-    const close = () => { gal.modal = null; render(); };
-    const run = async () => {
+    const close = () => { diag.tok++; gal.modal = null; render(); };   // açık genel tarama varsa durur
+    const okSets = gal.cat.sets.filter((x) => !x.filter?.unsupported);
+    const reqs = okSets.reduce((a, x) => a + (diagCrit(x)?.length || 0), 0);
+    const run = async (full = false) => {
       const set = sets.find((x) => x.id === diag.id);
       const crit = diagCrit(set);
       if (!crit) return;
-      diag.running = true; diag.text = L('diag.running'); render();
+      diag.running = true; diag.full = full; diag.armed = false; diag.text = L('diag.running'); render();
       let r;
       try { r = await diagProbe(crit); } catch (e) { r = { error: String(e?.message || e) }; }
       const sm = gal.summary[set.id];
       const app = 'userscript v' + (typeof GM_info !== 'undefined' ? GM_info.script?.version : '?') + ' · ' + (typeof GM_info !== 'undefined' ? GM_info.scriptHandler || '' : '');
-      diag.text = diagReport(r, { app, set: set.name, crit, saved: sm ? { c: sm.collected, n: sm.total, sc: sm.score } : null });
+      const overview = diagOverview(gal.summary, okSets, {
+        katalog: gal.cat.updated || null, alimSonrasi: settings.afterBuy || 'relist', notlandirilacak: Object.keys(gal.toGrade || {}).length,
+      });
+      // Genel tarama: bütün setlerin bütün takımları/ligleri, yalnız sayılar
+      let scan = null;
+      if (full) {
+        const my = ++diag.tok;
+        const rows = [];
+        for (const [i, x] of okSets.entries()) {
+          if (my !== diag.tok) break;
+          const ta0 = document.getElementById('fcgu-diag-ta');
+          if (ta0) ta0.value = L('diag.progress', { i: i + 1, n: okSets.length });
+          try { rows.push({ set: x, parts: (await diagProbe(diagCrit(x), false)).parts || [] }); }
+          catch (e) { rows.push({ set: x, error: String(e?.message || e).slice(0, 80) }); }
+          await sleep(rnd(300, 700));
+        }
+        scan = diagScan(rows, gal.summary) + (rows.length < okSets.length ? `
+  (durduruldu: ${rows.length}/${okSets.length})` : '');
+      }
+      diag.text = diagReport(r, { app, set: set.name, overview, scan, sets: diagSetList(gal.summary, okSets), saved: sm ? { c: sm.collected, n: sm.total, sc: sm.score } : null });
       diag.running = false; render();
     };
-    const ta = h('textarea', { readOnly: true, value: diag.text, placeholder: L('diag.ph'), style: 'width:100%;height:220px;margin-top:10px;font:11px/1.4 ui-monospace,Consolas,monospace;box-sizing:border-box' });
+    const ta = h('textarea', { id: 'fcgu-diag-ta', readOnly: true, value: diag.armed ? L('diag.all.note', { sets: okSets.length, reqs }) : diag.text, placeholder: L('diag.ph'), style: 'width:100%;height:220px;margin-top:10px;font:11px/1.4 ui-monospace,Consolas,monospace;box-sizing:border-box' });
     return h('div', { class: 'md', onclick: (e) => { if (e.target === e.currentTarget) close(); } }, [h('div', { class: 'box', style: 'width:min(720px,100%)' }, [
       h('h3', { text: L('diag.title') }),
       h('div', { class: 'mut', text: L('diag.body') }),
@@ -2338,7 +2469,11 @@
           const b = e.currentTarget;
           try { await navigator.clipboard.writeText(diag.text); b.textContent = L('diag.copied'); } catch (_) { ta.select(); }
         } }),
-        h('button', { class: 'b', text: L('diag.run'), disabled: diag.running, onclick: run }),
+        diag.running && diag.full
+          ? h('button', { class: 'g', text: L('diag.stop'), onclick: () => { diag.tok++; } })
+          : h('button', { class: 'g', text: diag.armed ? L('diag.all.confirm', { d: fmtDur(reqs * 1.3 + okSets.length * 0.5, L) }) : L('diag.all'), title: L('diag.all.title'), disabled: diag.running,
+            onclick: () => { if (diag.armed) run(true); else { diag.armed = true; render(); } } }),
+        h('button', { class: 'b', text: L('diag.run'), disabled: diag.running, onclick: () => run(false) }),
       ]),
     ])]);
   }
