@@ -166,6 +166,28 @@
   .sc2 .ft { display:flex; justify-content:space-between; font-size:10.5px; margin-top:2px; }
   .sc2 .ft .v { color:var(--grn); } .sc2 .ft .p { color:var(--mut); } .sc2 .ft .p.live { color:var(--warn); font-weight:700; } .sc2 .ft .p.none { color:var(--err); }
   .sc2.sp { border-color:rgba(166,107,255,.55); }
+  /* çoklu seçim */
+  .set .pick { position:absolute; top:10px; right:12px; width:18px; height:18px; border:1.5px solid var(--mut); border-radius:5px; display:grid; place-items:center; font-weight:800; font-size:12px; color:#1a1400; }
+  .set.picked { border-color:var(--acc); box-shadow:0 0 0 1px var(--acc) inset; }
+  .set.picked .pick { background:var(--acc); border-color:var(--acc); }
+  body.selmode .set .chk { display:none; }
+  .selbar { position:sticky; top:0; z-index:4; background:rgba(9,16,29,.97); border:1px solid rgba(245,197,24,.45); border-radius:12px; padding:10px 12px; margin:0 0 12px; box-shadow:0 8px 24px rgba(0,0,0,.35); }
+  .selbar[hidden] { display:none; }
+  .selbar .hd { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .selbar .hd b { color:var(--acc); }
+  .selrows { max-height:34vh; overflow:auto; margin-top:8px; border-top:1px solid var(--line); }
+  .srow { display:grid; grid-template-columns:22px 26px 1fr auto auto auto 26px; gap:8px; align-items:center; padding:5px 2px; border-bottom:1px solid rgba(35,50,77,.6); font-size:12px; }
+  .srow .crest, .srow .ph { width:24px; height:24px; font-size:11px; }
+  .srow .i { color:var(--mut); text-align:right; }
+  .srow select { padding:2px 4px; }
+  .srow .gg { font-weight:800; min-width:18px; text-align:center; }
+  .srow .gg.D { color:var(--gD); } .srow .gg.C { color:var(--gC); } .srow .gg.B { color:var(--gB); } .srow .gg.A { color:var(--gA); } .srow .gg.S { color:var(--gS); }
+  .srow .why { color:var(--warn); font-size:11px; }
+  .srow .why.mut { color:var(--mut); }
+  .srow button { background:none; border:0; color:var(--mut); cursor:pointer; font-size:14px; }
+  .srow button:hover { color:var(--err); }
+  .selbar .ft { display:flex; gap:8px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:8px; }
+  .selbar .ft .note { flex:1; min-width:220px; }
 </style>
 </head>
 <body>
@@ -178,6 +200,7 @@
   <div class="ovw" id="ovw"></div>
   <div class="top">
     <div class="tabs" id="tabs"></div>
+    <button class="b" id="selMode" data-i18n="sel.mode" data-i18n-title="sel.mode.title"></button>
     <button class="b" id="planner" data-i18n="btn.planner" data-i18n-title="btn.planner.title"></button>
     <button class="b" id="syncAll" data-i18n="btn.syncAll" data-i18n-title="btn.syncAll.title"></button>
   </div>
@@ -191,6 +214,7 @@
     <span style="flex:1"></span>
     <a href="#" id="toList" data-i18n="toList"></a>
   </div>
+  <div class="selbar" id="selbar" hidden></div>
   <div class="grid" id="grid"></div>
 </main>
 

@@ -4,7 +4,7 @@ import { imgUrls } from './lib/img.js';
 import { prevPrice } from './lib/pricing.js';
 import { fetchSetDefs, diagnoseConcept } from './lib/gallery-api.js';
 import { loadCatalog, refreshCatalog } from './lib/catalog.js';
-import { summarise, priceCandidates, cheapestFill, baseOf, syncEstimate, planFromTier, fmtDur, relistPrice, buyTargets, MAX_CARD_DEFAULT, diagCrit, diagReport, diagOverview, diagSetList, diagScan } from './lib/gallery.js';
+import { summarise, priceCandidates, cheapestFill, baseOf, syncEstimate, planFromTier, pickGrade, fmtDur, relistPrice, buyTargets, MAX_CARD_DEFAULT, diagCrit, diagReport, diagOverview, diagSetList, diagScan } from './lib/gallery.js';
 import { makeT, detectLang, localeOf } from './lib/i18n.js';
 
 // Galeri durum mesajlarının dili (Galeri ekranındaki TR/EN seçimi; yoksa tarayıcı dili)
@@ -621,9 +621,22 @@ async function buyBatch(my, items) {
     if (set.filter?.unsupported) { done.push(T('bg.unsupported', { name: set.name })); continue; }
     const { [defsKey(set.id)]: saved } = await chrome.storage.local.get(defsKey(set.id));
     if (!saved) { done.push(T('bg.unsyncedSkip', { name: set.name })); continue; }
-    const plan = planFromTier(set, it.grade, saved.defs, freshPrices(await loadPrices()));
+    const live = freshPrices(await loadPrices());
+    let grade = it.grade;
+    // Çoklu seçim (auto): o anki coin/bütçe ve fiyatlarla hedeften aşağı ulaşılabilir en yüksek derece
+    if (it.auto) {
+      const { settings: st, run } = await load();
+      const { galleryBuySpent = 0 } = await chrome.storage.local.get('galleryBuySpent');
+      let avail = run.coins ?? null;
+      if (st.galleryBudget > 0) avail = Math.min(avail ?? Infinity, Math.max(0, st.galleryBudget - galleryBuySpent));
+      const p = pickGrade(set, saved.defs, live, it.grade || null, avail);
+      if (!p.g) { done.push(T('bg.autoNone.' + p.why, { name: set.name })); continue; }
+      if (p.fell) done.push(T('bg.autoFell', { name: set.name, from: it.grade, to: p.g }));
+      grade = p.g;
+    }
+    const plan = planFromTier(set, grade, saved.defs, live);
     const todo = plan ? plan.cards.filter((c) => !c.col) : [];
-    if (!todo.length) continue;
+    if (!todo.length) { if (plan) done.push(T('bg.autoReady', { name: set.name, g: grade })); continue; }
     const { settings } = await load();
     const r = await buyCards(my, set, buyTargets(todo, settings.maxCard), `[${i + 1}/${items.length}] ${set.name} · `, ctx);
     total += r.bought;

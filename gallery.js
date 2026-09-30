@@ -1,7 +1,7 @@
 import { loadCatalog } from './lib/catalog.js';
 import {
   summarise, cheapestFill, counted as countedOf, GRADES, baseOf,
-  syncEstimate, fmtDur, planFromTier, defaultTier, bestNext, tierOptions, planTokens, HALL_OF_FUT,
+  syncEstimate, fmtDur, planFromTier, defaultTier, pickGrade, pickBatch, bestNext, tierOptions, planTokens, HALL_OF_FUT,
   sortOptions, showOptions, sortFilterSets, tokenLabel, tokenRows, overview, reachableScore, nextMilestone,
 } from './lib/gallery.js';
 import { makeT, detectLang, localeOf, LANGS, FLAGS } from './lib/i18n.js';
@@ -141,8 +141,10 @@ function card(set, sum, img) {
   const unsupported = set.filter?.unsupported;
   const full = sum && sum.collected >= sum.required;
   const toGrade = !!state.galleryToGrade?.[set.id] || !!NEXT.get(set.id)?.ready;
-  return h('div', { class: 'set' + (full ? ' full' : ''), onclick: () => openDetail(set.id) }, [
+  const picked = SEL.on && SEL.ids.includes(set.id);
+  return h('div', { class: 'set' + (full ? ' full' : '') + (picked ? ' picked' : ''), onclick: () => (SEL.on ? toggleSel(set.id) : openDetail(set.id)) }, [
     full ? h('span', { class: 'chk', text: '✓' }) : null,
+    SEL.on ? h('span', { class: 'pick', text: picked ? String(SEL.ids.indexOf(set.id) + 1) : '' }) : null,
     toGrade ? h('span', { class: 'gbadge', text: t('grade.badge'), title: t('ov.toGrade.title') }) : null,
     h('div', { class: 'hd' }, [
       setArt(set, img),
@@ -167,7 +169,7 @@ const summaryEarned = (set, s) => s.earned ?? set.grades.filter((g) => s.score >
 
 async function render() {
   if (!CAT) return;
-  state = await chrome.storage.local.get(['gallerySummary', 'galleryRun', 'gallerySettings', 'galleryMeta', 'galleryBuySpent', 'gallerySyncStats', 'galleryLevel', 'galleryToGrade']);
+  state = await chrome.storage.local.get(['gallerySummary', 'galleryRun', 'gallerySettings', 'galleryMeta', 'galleryBuySpent', 'gallerySyncStats', 'galleryLevel', 'galleryToGrade', 'galleryPrices']);
   if (!CAT.categories.some((c) => c.id === tab)) tab = CAT.categories[0].id;
   renderTabs();
   const img = imgUrls(state.galleryMeta?.imgBase);
@@ -190,6 +192,7 @@ async function render() {
   renderOverview(sums, sets);
 
   renderBar();
+  renderSel();
   if (openId) renderDetail();
 }
 // Üst özet: tüm galeri (büyük) + seçili sekme (küçük)
@@ -468,7 +471,8 @@ async function renderDetail() {
   const img = imgUrls(state.galleryMeta?.imgBase);
   const defs = saved?.defs || null;
   const sum = defs ? summarise(set, defs) : null;
-  if (!openGrade || !set.sol?.tiers?.some((x) => x.g === openGrade)) openGrade = defaultTier(set, sum?.score || 0);
+  // Varsayılan: şu an ulaşılabilir en yüksek derece (coin/bütçe + ilan); yoksa eski kural
+  if (!openGrade || !set.sol?.tiers?.some((x) => x.g === openGrade)) openGrade = pickGrade(set, defs, prices, null, availCoins()).g || defaultTier(set, sum?.score || 0);
 
   let head = null;
   if (sum) {
@@ -531,6 +535,97 @@ async function renderDetail() {
     body,
     list,
   ].filter(Boolean));
+}
+
+// ---------------------------------------------------------------- çoklu seçim
+// SEL.ids: seçim sırası = alım sırası; SEL.grade[id]: sete özel hedef (yoksa genel hedef SEL.target; null = en yüksek)
+const SEL = { on: false, ids: [], grade: {}, target: null, confirm: false };
+try { Object.assign(SEL, JSON.parse(localStorage.getItem('fcg-sel') || '{}'), { confirm: false }); } catch (_) {}
+const saveSel = () => { try { localStorage.setItem('fcg-sel', JSON.stringify({ on: SEL.on, ids: SEL.ids, grade: SEL.grade, target: SEL.target })); } catch (_) {} };
+function toggleSel(id) {
+  SEL.ids = SEL.ids.includes(id) ? SEL.ids.filter((x) => x !== id) : [...SEL.ids, id];
+  SEL.confirm = false;
+  saveSel();
+  render();
+}
+// Kullanılabilir coin: güncel coin, galeri bütçesi varsa kalanıyla sınırlı (ikisi de bilinmiyorsa null = sınır yok)
+function availCoins() {
+  const st = state.gallerySettings || {};
+  let a = state.galleryRun?.coins ?? null;
+  if (st.galleryBudget > 0) a = Math.min(a ?? Infinity, Math.max(0, st.galleryBudget - (state.galleryBuySpent || 0)));
+  return a === Infinity ? null : a;
+}
+function livePrices() {
+  const out = {};
+  for (const [d, x] of Object.entries(state.galleryPrices || {})) if (Date.now() - x.at < PRICE_TTL) out[d] = x.p;
+  return out;
+}
+function renderSel() {
+  document.body.classList.toggle('selmode', SEL.on);
+  $('selMode').className = SEL.on ? 'dan' : 'b';
+  const bar = $('selbar');
+  bar.hidden = !SEL.on;
+  if (!SEL.on) return;
+  const byId = new Map(CAT.sets.map((x) => [x.id, x]));
+  SEL.ids = SEL.ids.filter((id) => byId.has(id));
+  const img = imgUrls(state.galleryMeta?.imgBase);
+  const b = pickBatch(SEL.ids.map((id) => ({ set: byId.get(id), defs: DEFS.get(id) || null, grade: SEL.grade[id] || null })), livePrices(), SEL.target, availCoins());
+  const buyable = b.rows.filter((r) => r.g && DEFS.has(r.set.id) && r.plan.missing);
+  const need = buyable.reduce((a, r) => a + r.plan.need, 0);
+  const cards = buyable.reduce((a, r) => a + r.plan.missing, 0);
+  const gsel = (value, first, onchange, grades = GRADES) => h('select', { onchange }, [
+    h('option', { value: '', text: first, selected: !value }),
+    ...grades.slice().reverse().map((g) => h('option', { value: g, text: g, selected: value === g })),
+  ]);
+  const row = (r, i) => {
+    const x = r.set;
+    const tiers = GRADES.filter((g) => x.sol?.tiers?.some((y) => y.g === g));
+    const synced = DEFS.has(x.id);
+    let info;
+    if (!r.g) info = h('span', { class: 'why', text: t('sel.why.' + r.why) });
+    else if (!synced) info = h('span', { class: 'why', text: t('sel.unsynced') });
+    else if (!r.plan.missing) info = h('span', { class: 'why mut', text: t('sel.ready') });
+    else info = h('span', { class: 'i', text: t('pl.row', { n: r.plan.missing, c: kfmt(r.plan.need) }) });
+    return h('div', { class: 'srow' }, [
+      h('span', { class: 'i', text: String(i + 1) }),
+      setArt(x, img),
+      h('div', { style: 'min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer', text: x.name, onclick: () => openDetail(x.id) }),
+      gsel(SEL.grade[x.id] || '', t('sel.auto'), (e) => { if (e.target.value) SEL.grade[x.id] = e.target.value; else delete SEL.grade[x.id]; SEL.confirm = false; saveSel(); renderSel(); }, tiers),
+      h('span', { class: 'gg ' + (r.g || ''), text: r.g || '—', title: r.fell ? t('sel.fell', { from: SEL.grade[x.id] || SEL.target }) : '' }),
+      info,
+      h('button', { text: '✕', title: t('sel.remove'), onclick: () => toggleSel(x.id) }),
+    ]);
+  };
+  const running = !!state.galleryRun?.running;
+  bar.replaceChildren(...[
+    h('div', { class: 'hd' }, [
+      h('b', { text: t('sel.count', { n: SEL.ids.length }) }),
+      h('span', { class: 'kv', title: t('sel.avail.title'), text: availCoins() == null ? t('sel.avail.none') : t('sel.avail', { c: fmt(availCoins()) }) }),
+      h('label', { class: 'kv' }, [t('sel.target') + ' ', gsel(SEL.target, t('sel.target.max'), (e) => { SEL.target = e.target.value || null; SEL.confirm = false; saveSel(); renderSel(); })]),
+      h('span', { style: 'flex:1' }),
+      h('button', { class: 'g', text: t('sel.tabAll'), onclick: () => {
+        for (const x of CAT.sets) if (x.cat === tab && x.sol?.tiers?.length && !x.filter?.unsupported && !SEL.ids.includes(x.id)) SEL.ids.push(x.id);
+        saveSel(); render();
+      } }),
+      h('button', { class: 'g', text: t('sel.clear'), onclick: () => { SEL.ids = []; SEL.grade = {}; SEL.confirm = false; saveSel(); render(); } }),
+    ]),
+    SEL.ids.length ? h('div', { class: 'selrows' }, b.rows.map(row)) : h('div', { class: 'note', style: 'margin-top:8px', text: t('sel.empty') }),
+    h('div', { class: 'ft' }, [
+      h('span', { class: 'note', text: t('sel.note') }),
+      h('button', {
+        class: SEL.confirm ? 'dan' : 'b', disabled: running || !buyable.length,
+        text: SEL.confirm ? t('sel.confirm', { n: buyable.length, c: fmt(need) }) : t('sel.buy', { n: buyable.length, k: cards, c: fmt(need) }),
+        onclick: () => {
+          if (!SEL.confirm) { SEL.confirm = true; renderSel(); return; }
+          SEL.confirm = false;
+          // Derece alım anında yeniden seçilir (auto): hedef = sete özel ya da genel hedef
+          send({ type: 'buyBatch', items: buyable.map((r) => ({ setId: r.set.id, grade: SEL.grade[r.set.id] || SEL.target || null, auto: true })) });
+          renderSel();
+        },
+      }),
+      SEL.confirm ? h('button', { class: 'g', text: t('cancel'), onclick: () => { SEL.confirm = false; renderSel(); } }) : null,
+    ]),
+  ]);
 }
 
 // ---------------------------------------------------------------- token planlayıcı
@@ -601,6 +696,7 @@ function renderPlanner() {
 
 // ---------------------------------------------------------------- kontroller
 $('planner').addEventListener('click', openPlanner);
+$('selMode').addEventListener('click', () => { SEL.on = !SEL.on; SEL.confirm = false; saveSel(); render(); });
 $('contact').addEventListener('click', async () => {
   const b = $('contact');
   try { await navigator.clipboard.writeText('yusuflnx'); b.replaceChildren(t('contact.copied'), h('b', { text: 'yusuflnx' })); }
