@@ -68,6 +68,12 @@ function enrich(itemData, m) {
 // ---------------------------------------------------------------- depolama
 async function load() {
   const r = await chrome.storage.local.get(['galleryList', 'gallerySettings', 'galleryRun']);
+  // 1.4.6: eski varsayılan 50.000 (değiştirilmemiş) → 0 (yok); bir kez çalışır
+  if (r.gallerySettings && !r.gallerySettings.maxCardV2) {
+    if (r.gallerySettings.maxCard === 50000) r.gallerySettings.maxCard = 0;
+    r.gallerySettings.maxCardV2 = true;
+    await chrome.storage.local.set({ gallerySettings: r.gallerySettings });
+  }
   return {
     list: r.galleryList || [],
     settings: {

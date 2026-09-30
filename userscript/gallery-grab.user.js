@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gallery Grab
 // @namespace    https://github.com/JosephWRLD/gallery-grab
-// @version      2.1.4
+// @version      2.1.5
 // @description  FC Web App: FUT Galeri setleri, notlar, fut.gg çözümleri, token planlayıcı ve eksik kartları alma; oyuncu listesinden en ucuz kart alma
 // @author       JosephWRLD — Discord: yusuflnx
 // @license      PolyForm-Noncommercial-1.0.0 (ticari kullanım/satış yasak)
@@ -73,12 +73,18 @@
   };
 
   let list = store.get('list', []);
-  // galleryBudget / maxCard: Galeri'ye ayrı bütçe ve kart başına en fazla (lib'deki MAX_CARD_DEFAULT = 50000;
+  // galleryBudget / maxCard: Galeri'ye ayrı bütçe ve kart başına en fazla (lib'deki MAX_CARD_DEFAULT = 0 = yok;
   // lib aşağıda gömülü olduğu için burada sabit adı kullanılamıyor)
-  const settings = { budget: 0, skipOwned: false, expectClub: null, galleryBudget: 0, maxCard: 50000, afterBuy: 'relist', relist: { base: 'paid', pct: 0, dur: 3600 }, ...store.get('settings', {}) };
+  const settings = { budget: 0, skipOwned: false, expectClub: null, galleryBudget: 0, maxCard: 0, afterBuy: 'relist', relist: { base: 'paid', pct: 0, dur: 3600 }, ...store.get('settings', {}) };
   const club = { ids: new Set(store.get('clubBaseIds', [])), at: store.get('clubScanAt', 0), fetched: store.get('clubFetched', 0), total: store.get('clubTotal', null) };
   const run = { running: false, spent: store.get('spent', 0), coins: null, text: '', level: 'idle' };
 
+  // 2.1.5: eski varsayılan 50.000 (değiştirilmemiş) → 0; bir kez çalışır
+  if (!settings.maxCardV2) {
+    if (settings.maxCard === 50000) settings.maxCard = 0;
+    settings.maxCardV2 = true;
+    store.set('settings', settings);
+  }
   const saveList = () => { store.set('list', list); render(); };
   const saveSettings = () => { store.set('settings', settings); render(); };
   const setSpent = (v) => { run.spent = v; store.set('spent', v); render(); };
@@ -1473,7 +1479,7 @@
   // Kart başına en yüksek ödeme: canlı fiyat bakıldıysa canlı × 1,25; bakılmadıysa fut.gg fiyatının 2 katı ya da
   // fut.gg + 2.000 (hangisi büyükse). maxCard (kullanıcı ayarı, 0 = yok) her durumda üst sınırdır.
   // Dönen: geçerli BIN basamağına yuvarlanmış sınır; 0 = sınır yok (hiçbir referans ve ayar yoksa).
-  const MAX_CARD_DEFAULT = 50000;
+  const MAX_CARD_DEFAULT = 0;
   function priceCap(card, maxCard = MAX_CARD_DEFAULT) {
     const live = card?.live > 0 ? card.live : 0;
     const ref = card?.price > 0 ? card.price : 0;
@@ -2354,7 +2360,7 @@
       sel(['3600', '10800', '21600', '43200', '86400'].map((d) => [d, L('dur.' + d)]), String(settings.relist?.dur || 3600), (x) => { settings.relist = { ...settings.relist, dur: Number(x) }; saveSettings(); }),
     ]);
     const budget = h('input', { type: 'number', min: '0', step: '1000', placeholder: L('bar.budget.ph'), value: settings.galleryBudget || '', onchange: (e) => { settings.galleryBudget = Math.max(0, Math.floor(Number(e.target.value) || 0)); saveSettings(); } });
-    const maxCard = h('input', { type: 'number', min: '0', step: '1000', placeholder: L('bar.maxCard.ph'), value: settings.maxCard ?? 50000, onchange: (e) => { settings.maxCard = Math.max(0, Math.floor(Number(e.target.value) || 0)); saveSettings(); } });
+    const maxCard = h('input', { type: 'number', min: '0', step: '1000', placeholder: L('bar.maxCard.ph'), value: settings.maxCard ?? 0, onchange: (e) => { settings.maxCard = Math.max(0, Math.floor(Number(e.target.value) || 0)); saveSettings(); } });
     g.foot.replaceChildren(
       h('span', {}, [L('bar.coins') + ' ', h('b', { text: fmt(run.coins) }), ' ', h('button', {
         class: 'g', text: '↻', title: L('bar.refreshCoins.title'),

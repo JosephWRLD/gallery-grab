@@ -5,6 +5,13 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [2.1.5] / [1.4.6] — 2026-09-30
+
+### Değişti
+- **Kart başına en fazla** varsayılanı 50.000 → **0 (yok)**. Artık yalnız otomatik sınır (canlı ×1,25 / fut.gg ×2) ve
+  galeri bütçesi geçerli; 50.000 üstü kartlar (ör. 57.000'lik Undav) gereksiz yere atlanmıyor. Ayarı hiç değiştirmemiş
+  (50.000'de kalan) kullanıcılarda değer bir kez 0'a çekilir; elle başka bir değer girenlerinki korunur.
+
 ## [2.1.4] / [1.4.5] — 2026-09-30
 
 ### Değişti
