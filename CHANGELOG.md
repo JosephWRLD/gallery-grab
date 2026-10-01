@@ -5,6 +5,15 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [2.2.2] / [1.5.2] — 2026-10-01
+
+### Değişti
+- **Sırayla al** artık her setten önce seti EA'dan yeniden eşitler: o arada oyunda alınan/satılan kartlar hesaba katılır.
+- **Oto derece canlı fiyatla seçilir:** seçilen derecenin eksik kartlarına pazardan güncel fiyat bakılır ve karar
+  yeniden verilir; fiyat yüzünden derece düşerse yeni derecenin kartları da fiyatlanır (en çok 3 derece). Son 10 dakikada
+  fiyatına bakılan kart yeniden aranmaz. Elle seçilen derecede yalnız eşitleme yapılır. Kartlar yine alımdan hemen önce
+  pazardaki güncel en ucuz ilandan alınır.
+
 ## [2.2.1] / [1.5.1] — 2026-10-01
 
 ### Eklendi
