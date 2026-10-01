@@ -5,6 +5,15 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [1.5.3] — 2026-10-01
+
+### Eklendi
+- **`guncelle.bat`** (+ `tools/update.ps1`): GitHub'daki en yeni eklenti sürümünü indirip eklenti klasörünün üstüne
+  yazar; klasör yolu aynı kaldığı için eklenti kimliği ve kayıtlı veriler korunur. Ardından Chrome'da Yenile yeterli.
+  (Chrome paketlenmemiş eklentiyi kendisi güncellemez; Yenile yalnız klasörü yeniden okur.)
+- **Yeni sürüm uyarısı:** GitHub'daki sürüm 6 saatte bir kontrol edilir; daha yeniyse galeri ekranında ve oyuncu
+  listesi panelinde *Yeni sürüm var* bağlantısı görünür.
+
 ## [2.2.2] / [1.5.2] — 2026-10-01
 
 ### Değişti

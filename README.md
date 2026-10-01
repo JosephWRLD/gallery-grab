@@ -48,6 +48,12 @@
 2. **Paketlenmemiş öğe yükle** ile bu klasörü seç.
 3. EA FC Web App'i aç ve giriş yap. Oyun açılınca sol menünün en altında **GALLERY** sekmesi görünür.
 
+**Güncelleme:** Chrome paketlenmemiş eklentiyi kendisi güncellemez; **Yenile** yalnız klasördeki dosyaları yeniden okur.
+Yeni sürüm çıkınca galeri ekranında *Yeni sürüm var* yazar. Eklenti klasöründeki **`guncelle.bat`**'ı çalıştır
+(son sürümü indirip aynı klasörün üstüne yazar), sonra `chrome://extensions`'ta **Yenile**'ye bas.
+Elle yapmak istersen: [Releases](https://github.com/JosephWRLD/gallery-grab/releases)'tan son `v1.x` zip'ini indir ve
+**aynı klasörün üstüne** aç. Eklentiyi kaldırıp başka klasörden yükleme — kayıtlı veriler silinir.
+
 **Tampermonkey**
 
 1. Chrome'a [Tampermonkey](https://www.tampermonkey.net/) kur.

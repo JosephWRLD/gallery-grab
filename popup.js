@@ -224,3 +224,12 @@ $('contact').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText('yusuflnx'); $('contact').textContent = 'Kopyalandı ✓'; } catch (_) { $('contact').textContent = 'Discord: yusuflnx'; }
   setTimeout(() => { $('contact').textContent = '💬 Discord yusuflnx'; }, 1800);
 });
+
+// Yeni sürüm uyarısı: paketlenmemiş eklenti kendiliğinden güncellenmez
+send({ type: 'checkUpdate' }).then((u) => {
+  if (!u?.latest) return;
+  const a = $('upd');
+  a.href = 'https://github.com/JosephWRLD/gallery-grab/releases';
+  a.textContent = `⬆ Yeni sürüm ${u.latest} var (kurulu: ${u.current}) — eklenti klasöründeki guncelle.bat'ı çalıştır, sonra chrome://extensions'ta Yenile'ye bas.`;
+  a.hidden = false;
+}).catch(() => {});

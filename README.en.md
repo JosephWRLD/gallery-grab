@@ -48,6 +48,12 @@ There are two versions and both share the same code. **Don't install both.**
 2. Click **Load unpacked** and select this folder.
 3. Open the EA FC Web App and sign in. Once the game has loaded, a **GALLERY** tab appears at the bottom of the left menu.
 
+**Updating:** Chrome never updates unpacked extensions; **Reload** only re-reads the files in the folder.
+When a new version is out, the Gallery screen shows *New version available*. Run **`guncelle.bat`** in the extension
+folder (downloads the latest release over the same folder), then press **Reload** in `chrome://extensions`.
+Manually: download the latest `v1.x` zip from [Releases](https://github.com/JosephWRLD/gallery-grab/releases) and
+extract it **over the same folder**. Don't remove the extension and load it from another folder — saved data is lost.
+
 **Tampermonkey**
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/) in Chrome.
