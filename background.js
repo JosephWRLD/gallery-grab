@@ -2,9 +2,9 @@ import { api, ApiError, parseCoins } from './lib/ea-api.js';
 import { searchPlayers, fetchMeta } from './lib/players.js';
 import { imgUrls } from './lib/img.js';
 import { prevPrice } from './lib/pricing.js';
-import { fetchSetDefs, diagnoseConcept } from './lib/gallery-api.js';
+import { fetchSetDefs, diagnoseConcept, deepDiagnose } from './lib/gallery-api.js';
 import { loadCatalog, refreshCatalog } from './lib/catalog.js';
-import { summarise, priceCandidates, cheapestFill, baseOf, syncEstimate, planFromTier, pickGrade, fmtDur, relistPrice, buyTargets, MAX_CARD_DEFAULT, diagCrit, diagReport, diagOverview, diagSetList, diagScan } from './lib/gallery.js';
+import { summarise, applyFloors, floorScore, priceCandidates, cheapestFill, baseOf, syncEstimate, planFromTier, pickGrade, fmtDur, relistPrice, buyTargets, MAX_CARD_DEFAULT, diagCrit, diagReport, diagOverview, diagSetList, diagScan, deepReport } from './lib/gallery.js';
 import { makeT, detectLang, localeOf } from './lib/i18n.js';
 
 // Galeri durum mesajlarının dili (Galeri ekranındaki TR/EN seçimi; yoksa tarayıcı dili)
@@ -352,16 +352,28 @@ const defsKey = (id) => 'gdefs:' + id;
 const pause = () => sleep(rnd(300, 600));          // aynı setin sayfaları arası
 const setGap = () => sleep(rnd(300, 700));         // setler arası
 
-async function setById(id) {
+// galleryGraded = { [setId]: { best, manual } } — oyundaki derece geri gitmez (bkz. lib/gallery.js summarise)
+async function loadCat() {
   const cat = await loadCatalog();
+  const { galleryGraded = {} } = await chrome.storage.local.get('galleryGraded');
+  applyFloors(cat.sets, galleryGraded);
+  return cat;
+}
+
+async function setById(id) {
+  const cat = await loadCat();
   const set = cat.sets.find((s) => s.id === id);
   if (!set) throw new Error('Set katalogda yok: ' + id);
   return set;
 }
 
 async function saveSetDefs(set, defs, reqs = null) {
+  const { gallerySummary = {}, galleryGraded = {} } = await chrome.storage.local.get(['gallerySummary', 'galleryGraded']);
+  const g = galleryGraded[set.id] || {};
+  const live = summarise({ ...set, floor: 0 }, defs).live;
+  if (live > (g.best || 0)) { galleryGraded[set.id] = { ...g, best: live }; await chrome.storage.local.set({ galleryGraded }); }
+  set.floor = floorScore(set, galleryGraded[set.id]);
   const sum = summarise(set, defs);
-  const { gallerySummary = {} } = await chrome.storage.local.get('gallerySummary');
   gallerySummary[set.id] = {
     collected: sum.collected, required: sum.required, total: sum.total,
     score: sum.score, grade: sum.grade, earned: sum.earned,
@@ -371,7 +383,7 @@ async function saveSetDefs(set, defs, reqs = null) {
 }
 
 async function syncSets(my, ids) {
-  const cat = await loadCatalog();
+  const cat = await loadCat();
   const sets = ids.map((id) => cat.sets.find((s) => s.id === id)).filter((s) => s && !s.filter.unsupported);
   const got = await chrome.storage.local.get(['gallerySyncStats', 'gallerySummary']);
   let secPerReq = got.gallerySyncStats?.secPerReq || null;
@@ -608,7 +620,7 @@ async function markToGrade(ids) {
 // Token planlayıcının seçtiği setler: [{ setId, grade }] sırayla; her setten sonra set yeniden eşitlenir.
 async function buyBatch(my, items) {
   await refreshCoinsRun();
-  const cat = await loadCatalog();
+  const cat = await loadCat();
   const ctx = await buyContext();
   if (ctx.full) return stop(T('bg.tpFull', { n: ctx.tp }), 'warn', my);
   let total = 0;
@@ -819,6 +831,21 @@ chrome.runtime.onMessage.addListener((msg, _s, reply) => {
         await chrome.storage.local.set({ galleryToGrade });
         return { ok: true };
       }
+      case 'setGraded': {   // value: 'D'…'S' = oyundaki derece, null = otomatik (eşitlemelerde görülen en yüksek); reset: kayıt silinir
+        const { galleryGraded = {} } = await chrome.storage.local.get('galleryGraded');
+        if (msg.reset) delete galleryGraded[msg.id];
+        else galleryGraded[msg.id] = { ...(galleryGraded[msg.id] || {}), manual: msg.value || null };
+        await chrome.storage.local.set({ galleryGraded });
+        const set = await setById(msg.id);
+        const saved = (await chrome.storage.local.get(defsKey(msg.id)))[defsKey(msg.id)];
+        if (saved?.defs) {   // özet (ızgara) yeni tabanla yeniden hesaplanır
+          const { gallerySummary = {} } = await chrome.storage.local.get('gallerySummary');
+          const sum = summarise(set, saved.defs);
+          if (gallerySummary[set.id]) Object.assign(gallerySummary[set.id], { score: sum.score, grade: sum.grade, earned: sum.earned });
+          await chrome.storage.local.set({ gallerySummary });
+        }
+        return { ok: true };
+      }
       case 'setAfterBuy': {
         const { settings } = await load();
         const v = ['relist', 'tradepile', 'keep'].includes(msg.value) ? msg.value : 'relist';
@@ -831,7 +858,7 @@ chrome.runtime.onMessage.addListener((msg, _s, reply) => {
         if (!crit) return { ok: false, error: T('bg.unsupported', { name: set.name }) };
         const { gallerySummary = {}, galleryToGrade = {} } = await chrome.storage.local.get(['gallerySummary', 'galleryToGrade']);
         const { settings } = await load();
-        const cat = await loadCatalog();
+        const cat = await loadCat();
         const s = gallerySummary[set.id];
         let r;
         try { r = await diagnoseConcept(crit); } catch (e) { r = { error: e?.message || String(e) }; }
@@ -857,9 +884,14 @@ chrome.runtime.onMessage.addListener((msg, _s, reply) => {
         }
         return { ok: true, text: diagReport(r, { app, set: set.name, overview, scan, sets: diagSetList(gallerySummary, okSets), saved: s ? { c: s.collected, n: s.total, sc: s.score } : null }) };
       }
+      case 'deepDiag': {   // Derin teşhis: oyundaki galeri derecesi Web App'te bir yerde var mı (EA'ya istek yok)
+        let r;
+        try { r = await deepDiagnose(); } catch (e) { r = { error: e?.message || String(e) }; }
+        return { ok: true, text: deepReport(r, { app: 'eklenti v' + chrome.runtime.getManifest().version }) };
+      }
       case 'diagStop': diagToken++; return { ok: true };
       case 'diagEstimate': {   // genel tarama onayı için: set ve istek sayısı
-        const okSets = (await loadCatalog()).sets.filter((x) => !x.filter?.unsupported);
+        const okSets = (await loadCat()).sets.filter((x) => !x.filter?.unsupported);
         return { ok: true, sets: okSets.length, reqs: okSets.reduce((a, x) => a + (diagCrit(x)?.length || 0), 0) };
       }
       case 'catalog': {
@@ -894,7 +926,7 @@ chrome.runtime.onConnect.addListener((port) => {
   const { run } = await load();
   if (run.running) await patchRun({ running: false, text: T('bg.restarted'), level: 'warn' });
   try {
-    const bad = (await loadCatalog()).sets.filter((x) => x.filter?.unsupported).map((x) => x.id);
+    const bad = (await loadCat()).sets.filter((x) => x.filter?.unsupported).map((x) => x.id);
     const { gallerySummary = {} } = await chrome.storage.local.get('gallerySummary');
     if (bad.some((id) => gallerySummary[id])) { bad.forEach((id) => delete gallerySummary[id]); await chrome.storage.local.set({ gallerySummary }); }
     await chrome.storage.local.remove(bad.map(defsKey));

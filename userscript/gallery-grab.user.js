@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gallery Grab
 // @namespace    https://github.com/JosephWRLD/gallery-grab
-// @version      2.2.0
+// @version      2.2.1
 // @description  FC Web App: FUT Galeri setleri, notlar, fut.gg çözümleri, token planlayıcı ve eksik kartları alma; oyuncu listesinden en ucuz kart alma
 // @author       JosephWRLD — Discord: yusuflnx
 // @license      PolyForm-Noncommercial-1.0.0 (ticari kullanım/satış yasak)
@@ -738,6 +738,9 @@
     'diag.body': "Oyunda notlandırdığın (✓ olması gereken) bir seti seç ve Çalıştır'a bas. Rapor alım yapmaz, kişisel bilgi içermez; Kopyala ile Discord'dan yusuflnx'e gönder.",
     'diag.set': 'Set:',
     'diag.run': 'Çalıştır',
+    'diag.deep': 'Derin teşhis',
+    'diag.deep.title': "Web App'in tamamını tarar (sınıflar, servisler, istek adresleri, uygulama kodu, dil dosyası): oyundaki galeri derecesi bir yerde var mı? EA'ya istek atmaz, 10-30 sn sürebilir.",
+    'diag.deep.running': 'Derin teşhis çalışıyor (uygulama kodu taranıyor, 10-30 sn)…',
     'diag.running': 'Çalışıyor… (EA Web App sekmesi açık ve giriş yapılmış olmalı)',
     'diag.copy': 'Kopyala',
     'diag.copied': '✓ Kopyalandı',
@@ -870,6 +873,12 @@
     'grade.badge': 'oyunda notlandır',
     'grade.banner': "Bu sette kart aldın: tokenı almak için seti oyunda (konsol / PC) Galeri'den notlandır. Web App notlandıramıyor. Notlandırınca işareti kaldır.",
     'grade.done': '✓ Notlandırdım',
+    'ingame.label': 'Oyundaki derece:',
+    'ingame.auto': 'Otomatik',
+    'ingame.reset': 'Sıfırla',
+    'ingame.reset.title': 'Bu set için hatırlanan en yüksek puanı ve seçtiğin dereceyi siler; derece yeniden kulüpteki kartlardan hesaplanır.',
+    'ingame.title': 'Oyunda notlandırdığın dereceyi seç. Kartları sattıktan sonra EA onları toplanmış saymadığı için eklenti dereceyi düşük hesaplar; seçtiğin derece altına inilmez.',
+    'ingame.note': 'Oyundaki derece {g} kabul ediliyor — kulüpteki kartlarla hesaplanan {n} puan (not {lg}). Satılan kartları EA toplanmış saymıyor.',
     'sol.old': ' (fiyatlar {n} gün eski)',
     'buy.confirm': 'Eminim — {n} kartı al (≈ {c})',
     'buy.plan': 'Bu çözümü al ({n} kart ≈ {c})',
@@ -1048,6 +1057,9 @@
     'diag.body': "Pick a set you have graded in game (it should show ✓) and press Run. The report buys nothing and has no personal data; Copy it and send it to yusuflnx on Discord.",
     'diag.set': 'Set:',
     'diag.run': 'Run',
+    'diag.deep': 'Deep diagnosis',
+    'diag.deep.title': "Scans the whole Web App (classes, services, request URLs, app code, language file): is the in-game gallery grade anywhere? Sends no requests to EA, may take 10-30 s.",
+    'diag.deep.running': 'Deep diagnosis running (scanning app code, 10-30 s)…',
     'diag.running': 'Running… (the EA Web App tab must be open and logged in)',
     'diag.copy': 'Copy',
     'diag.copied': '✓ Copied',
@@ -1176,6 +1188,12 @@
     'grade.badge': 'grade in game',
     'grade.banner': "You bought cards for this set: grade it in the in-game Gallery (console / PC) to claim the tokens. The Web App can't grade. Clear the mark once graded.",
     'grade.done': '✓ I graded it',
+    'ingame.label': 'In-game grade:',
+    'ingame.auto': 'Auto',
+    'ingame.reset': 'Reset',
+    'ingame.reset.title': 'Clears the remembered best score and the grade you picked for this set; the grade is recalculated from the cards in your club.',
+    'ingame.title': "Pick the grade you reached in-game. Once you sell the cards EA no longer counts them as collected, so the extension under-counts; the grade never drops below what you pick.",
+    'ingame.note': 'In-game grade taken as {g} — cards in your club give {n} pts (grade {lg}). EA does not count sold cards as collected.',
     'sol.old': ' (prices {n} days old)',
     'buy.confirm': 'Confirm — buy {n} cards (≈ {c})',
     'buy.plan': 'Buy this solution ({n} cards ≈ {c})',
@@ -1353,10 +1371,25 @@
     };
   }
 
+  // Oyunda kazanılan derece geri gitmez, ama kartlar satılınca EA isCollected'ı false yapar ve hesap düşer.
+  // set.floor = bilinen oyun puanı (applyFloors); score = max(kulüpteki kartlarla hesaplanan, floor), live = hesaplanan.
   function summarise(set, defs) {
     const top = counted(set, defs);
-    const score = top.reduce((a, d) => a + (d.sc || 0), 0);
-    return { collected: top.length, required: set.required, total: defs.length, score, ...gradeFor(set, score) };
+    const live = top.reduce((a, d) => a + (d.sc || 0), 0);
+    const score = Math.max(live, set.floor || 0);
+    return { collected: top.length, required: set.required, total: defs.length, score, live, ...gradeFor(set, score) };
+  }
+
+  // graded = galleryGraded[setId] = { best, manual } — best: eşitlemelerde görülen en yüksek puan,
+  // manual: kullanıcının girdiği oyundaki derece (varsa best yerine o derecenin eşiği geçerli)
+  function floorScore(set, graded) {
+    if (!graded) return 0;
+    if (graded.manual) return set.grades?.find((g) => g.g === graded.manual)?.score || 0;
+    return graded.best || 0;
+  }
+  function applyFloors(sets, graded = {}) {
+    for (const s of sets) s.floor = floorScore(s, graded[s.id]);
+    return sets;
   }
 
   // Boş slotları en ucuz toplanmamış kartlarla doldurma planı.
@@ -1865,6 +1898,196 @@
     })();
   }
 
+  // "Derin teşhis": oyundaki galeri derecesinin Web App'te bir yerde olup olmadığını aramak için Web App'in
+  // tamamını tarar. EA sunucusuna istek ATMAZ: yalnız sayfadaki nesneler, tarayıcının zaten yüklediği
+  // uygulama kodu (JS) ve dil dosyası okunur. Sayfa bağlamında çalışır, kendi içinde bağımsız olmalı.
+  // Kimlik bilgisi döndürmez (SID/persona/e-posta değerleri, depolama değerleri yok; yalnız adlar).
+  function deepProbe() {
+    /* global unsafeWindow */
+    const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+    const KW = /galler|grad(e|ing)|collect|album|concept|milestone|objective|reward|token|season|progress|achiev|trophy|stamp/i;
+    const NARROW = /galler|grading|graded|gradescore|isgrade|collected|album|setgrade|tierreward/i;
+    const ua = navigator.userAgent || '';
+    const uniq = (a) => [...new Set(a)];
+    const top = (m, n) => Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, n);
+    const protoNames = (o, depth = 6) => {
+      const out = new Set();
+      for (let p = o, d = 0; p && p !== Object.prototype && p !== Function.prototype && d < depth; p = Object.getPrototypeOf(p), d++) {
+        let ks = [];
+        try { ks = Object.getOwnPropertyNames(p); } catch (_) {}
+        for (const k of ks) if (k !== 'constructor') out.add(k);
+      }
+      return [...out];
+    };
+    const kind = (v) => (v == null ? String(v) : typeof v === 'function' ? (/^class\b/.test(Function.prototype.toString.call(v)) || v.prototype && Object.getOwnPropertyNames(v.prototype).length > 1 ? 'class' : 'fn') : Array.isArray(v) ? 'array' : typeof v);
+    const out = { env: {}, globals: {}, services: {}, repositories: {}, enums: {}, requests: {}, bundle: {}, loc: {}, storage: {}, errors: [] };
+    const err = (where, e) => out.errors.push(`${where}: ${String(e?.message || e).slice(0, 100)}`);
+
+    // 1) Ortam
+    try {
+      out.env = {
+        browser: /OPR\//.test(ua) ? 'Opera' : /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : 'other',
+        path: location.pathname.replace(/[^/a-z0-9.-]/gi, '').slice(0, 80),
+        ready: !!W.services?.Item, sid: !!(W.services?.Authentication?.utasSession?.id),
+        versions: Object.fromEntries(Object.getOwnPropertyNames(W).filter((k) => /version|build|^APP_/i.test(k) && /string|number/.test(typeof W[k])).slice(0, 10).map((k) => [k, String(W[k]).slice(0, 40)])),
+      };
+    } catch (e) { err('env', e); }
+
+    // 2) Global adlar: UT sınıfları ve anahtar kelimeli her şey
+    let gnames = [];
+    try {
+      gnames = Object.getOwnPropertyNames(W);
+      const ut = gnames.filter((k) => /^(UT|EA|FUT)/.test(k));
+      const hit = gnames.filter((k) => KW.test(k));
+      out.globals = {
+        total: gnames.length, utCount: ut.length,
+        keyword: hit.sort().map((k) => { let v; try { v = W[k]; } catch (_) {} return `${k}:${kind(v)}`; }),
+        // Anahtar kelimeli sınıfların prototip metotları (ör. UTGalleryViewController.prototype.*)
+        classMethods: Object.fromEntries(hit.filter((k) => { try { return typeof W[k] === 'function' && W[k].prototype; } catch (_) { return false; } })
+          .slice(0, 60).map((k) => [k, protoNames(W[k].prototype).slice(0, 60)])),
+        utSample: ut.slice(0, 400),
+      };
+    } catch (e) { err('globals', e); }
+
+    // 3) Servisler + depolar: bütün metot adları, anahtar kelimeliler ayrıca
+    const svcDump = (root) => {
+      const r = {};
+      for (const k of Object.keys(root || {})) {
+        let o; try { o = root[k]; } catch (_) { continue; }
+        if (!o || typeof o !== 'object') { r[k] = kind(o); continue; }
+        const names = protoNames(o);
+        const hits = names.filter((n) => KW.test(n));
+        r[k] = { n: names.length, hits, all: names.slice(0, 120) };
+      }
+      return r;
+    };
+    try { out.services = svcDump(W.services); } catch (e) { err('services', e); }
+    try { out.repositories = svcDump(W.repositories); } catch (e) { err('repositories', e); }
+
+    // 4) Sabit/enum nesneleri: anahtar kelimeli sabitler (ör. GalleryGradeType = { S: 4, ... })
+    try {
+      for (const k of gnames) {
+        let v; try { v = W[k]; } catch (_) { continue; }
+        let ks;
+        try {
+          if (!v || typeof v !== 'object' || Array.isArray(v) || v === W || v.nodeType) continue;
+          ks = Object.keys(v);
+        } catch (_) { continue; }   // başka kökenli çerçeve (iframe) erişimi hata atar
+        if (!ks.length || ks.length > 300) continue;
+        if (!ks.every((x) => /string|number|boolean/.test(typeof v[x]))) continue;
+        if (KW.test(k) || ks.some((x) => KW.test(x))) out.enums[k] = Object.fromEntries(ks.slice(0, 40).map((x) => [x, v[x]]));
+      }
+    } catch (e) { err('enums', e); }
+
+    // 5) Web App'in bu oturumda attığı istekler (adresler normalleştirilir: sayılar {n}, sorgu yalnız anahtar adları)
+    const entries = (() => { try { return performance.getEntriesByType('resource'); } catch (_) { return []; } })();
+    try {
+      const ut = {}, hosts = {};
+      for (const e of entries) {
+        let u; try { u = new URL(e.name); } catch (_) { continue; }
+        hosts[u.host] = (hosts[u.host] || 0) + 1;
+        const m = u.pathname.match(/\/ut\/(game\/fc\d+|auth|delete|shards)?(\/.*)?$/);
+        if (!m) continue;
+        const k = (m[2] || m[1] || '/').replace(/\/\d+/g, '/{n}') + (u.search ? '?' + [...u.searchParams.keys()].sort().join('&') : '');
+        ut[k] = (ut[k] || 0) + 1;
+      }
+      out.requests = { total: entries.length, hosts: top(hosts, 15), ut: top(ut, 80) };
+    } catch (e) { err('requests', e); }
+
+    // 6) Uygulama kodu (tarayıcının yüklediği JS dosyaları): galeri ile ilgili adres ve ad geçen yerler
+    const jsUrls = uniq([
+      ...[...document.scripts].map((s) => s.src).filter(Boolean),
+      ...entries.map((e) => e.name).filter((n) => /\.js(\?|$)/.test(n)),
+    ]).filter((u) => /^https:/.test(u) && !/google|facebook|doubleclick|analytics|optimizely|onetrust|cookielaw/i.test(u)).slice(0, 25);
+    const locUrls = uniq(entries.map((e) => e.name).filter((n) => /\/loc\/.*\.json(\?|$)/i.test(n))).slice(0, 4);
+
+    return (async () => {
+      const idents = {}, paths = {}, strs = {};
+      const files = [], ctx = [];
+      for (const u of jsUrls) {
+        try {
+          const r = await W.fetch(u, { credentials: 'omit', cache: 'force-cache' });
+          const s = await r.text();
+          files.push({ f: u.split('/').pop().split('?')[0].slice(0, 50), kb: Math.round(s.length / 1024) });
+          // Tanımlayıcılar: isGraded, galleryGrade, gradingScore ...
+          for (const m of s.matchAll(/[A-Za-z_$][\w$]{2,60}/g)) if (NARROW.test(m[0])) idents[m[0]] = (idents[m[0]] || 0) + 1;
+          // Galeri geçen yerlerin çevresi (±90 karakter): kodun neyi çağırdığını görmek için
+          let end = -1;
+          for (const m of s.matchAll(/galler|isgraded|graded/gi)) {
+            if (ctx.length >= 60) break;
+            if (m.index < end) continue;   // önceki parçanın içinde kalan eşleşme
+            end = m.index + 90;
+            ctx.push(s.slice(Math.max(0, m.index - 90), end).replace(/[\s]+/g, ' '));
+          }
+          // Tırnak içi metinler: adres parçaları ve anahtar adları
+          for (const m of s.matchAll(/["'`]([^"'`\n]{2,120})["'`]/g)) {
+            const v = m[1];
+            if (/^\/?[\w{}.-]+(\/[\w{}.?=&%-]*)+$/.test(v) && (/\/ut\/|game\/|\/club|defid|concept/i.test(v) || NARROW.test(v))) paths[v] = (paths[v] || 0) + 1;
+            else if (NARROW.test(v) && v.length < 80) strs[v] = (strs[v] || 0) + 1;
+          }
+        } catch (e) { err('js ' + u.split('/').pop().slice(0, 40), e); }
+      }
+      out.bundle = {
+        files,
+        identifiers: top(idents, 150),
+        paths: top(paths, 150),
+        strings: top(strs, 120),
+        ctx,
+      };
+      // 7) Dil dosyası: galeri/derece metinleri (oyunda hangi kavramlar var)
+      for (const u of locUrls) {
+        try {
+          const j = await (await W.fetch(u, { credentials: 'omit', cache: 'force-cache' })).json();
+          const flat = Object.entries(j || {}).filter(([k, v]) => typeof v === 'string' && (/galler/i.test(k) || /galler|(^|[^p])grad(e|es|ing)\b/i.test(v)));
+          out.loc[u.split('/').slice(-2).join('/').split('?')[0]] = { n: flat.length, sample: flat.slice(0, 120).map(([k, v]) => `${k} = ${v.slice(0, 90)}`) };
+        } catch (e) { err('loc', e); }
+      }
+      // 8) Sayfanın kendi depolaması: yalnız anahtar adları ve boyutları (değer yok)
+      try {
+        const ls = (st) => { const r = []; for (let i = 0; i < st.length; i++) { const k = st.key(i); r.push(`${k.replace(/\d{6,}/g, '{id}').slice(0, 60)} (${(st.getItem(k) || '').length})`); } return r.slice(0, 60); };
+        out.storage = { local: ls(W.localStorage), session: ls(W.sessionStorage) };
+        if (W.indexedDB?.databases) out.storage.indexedDB = (await W.indexedDB.databases()).map((d) => d.name);
+      } catch (e) { err('storage', e); }
+      return out;
+    })();
+  }
+
+  function deepReport(r, meta = {}) {
+    const j = (x) => (x == null ? '—' : JSON.stringify(x));
+    const L = [`Gallery Grab DERİN teşhis · ${meta.app || '?'} · ${new Date().toISOString()}`, '(EA sunucusuna istek atılmadı; yalnız sayfa nesneleri, yüklü JS ve dil dosyası)'];
+    if (!r) return L.concat('HATA: sonuç yok').join('\n');
+    if (r.error) return L.concat(`HATA: ${r.error}`).join('\n');
+    const sec = (t) => L.push('', `===== ${t}`);
+    sec('Ortam'); L.push(j(r.env));
+    if (r.errors?.length) { sec('Hatalar'); L.push(...r.errors); }
+    sec(`Global adlar (toplam ${r.globals?.total}, UT* ${r.globals?.utCount}) — anahtar kelimeli`);
+    L.push((r.globals?.keyword || []).join(', ') || '—');
+    for (const [k, v] of Object.entries(r.globals?.classMethods || {})) L.push(`  ${k}: ${v.join(', ')}`);
+    sec('Servisler (services.*) — anahtar kelimeli metotlar');
+    for (const [k, v] of Object.entries(r.services || {})) L.push(typeof v === 'string' ? `${k}: ${v}` : `${k} (${v.n}): ${v.hits.join(', ') || '—'}`);
+    sec('Depolar (repositories.*) — anahtar kelimeli metotlar');
+    for (const [k, v] of Object.entries(r.repositories || {})) L.push(typeof v === 'string' ? `${k}: ${v}` : `${k} (${v.n}): ${v.hits.join(', ') || '—'}`);
+    sec('Sabitler / enum');
+    for (const [k, v] of Object.entries(r.enums || {})) L.push(`${k} ${j(v)}`);
+    sec(`İstekler (kayıt ${r.requests?.total})`);
+    L.push('hostlar: ' + j(r.requests?.hosts));
+    for (const [k, n] of r.requests?.ut || []) L.push(`  ${n}× ${k}`);
+    sec('Uygulama kodu: dosyalar'); L.push(j(r.bundle?.files));
+    sec('Kod: galeri/derece adları (ad × sayı)'); L.push((r.bundle?.identifiers || []).map(([k, n]) => `${k}×${n}`).join(', ') || '—');
+    sec('Kod: adres kalıpları'); for (const [k, n] of r.bundle?.paths || []) L.push(`  ${n}× ${k}`);
+    sec('Kod: metinler'); L.push((r.bundle?.strings || []).map(([k, n]) => `${k}×${n}`).join(' | ') || '—');
+    sec('Kod: galeri geçen yerlerin çevresi'); for (const c of r.bundle?.ctx || []) L.push('  … ' + c + ' …');
+    sec('Dil dosyası: galeri/derece metinleri');
+    for (const [k, v] of Object.entries(r.loc || {})) { L.push(`${k} (${v.n})`); L.push(...v.sample.map((x) => '  ' + x)); }
+    sec('Sayfa depolaması (yalnız anahtar adları)'); L.push(j(r.storage));
+    sec('Tüm servis metotları');
+    for (const [k, v] of Object.entries(r.services || {})) if (typeof v !== 'string') L.push(`${k}: ${v.all.join(', ')}`);
+    sec('Tüm depo metotları');
+    for (const [k, v] of Object.entries(r.repositories || {})) if (typeof v !== 'string') L.push(`${k}: ${v.all.join(', ')}`);
+    sec('UT global adları (ilk 400)'); L.push((r.globals?.utSample || []).join(', '));
+    return L.join('\n');
+  }
+
   // Kayıtlı eşitleme verisinin genel özeti (yeni istek atmaz): summary = gallerySummary, sets = katalog setleri
   function diagOverview(summary = {}, sets = [], extra = {}) {
     const rows = sets.map((s) => summary[s.id]).filter(Boolean);
@@ -1985,6 +2208,7 @@
     pl: { mode: 'target', target: 500, budget: 100000, syncedOnly: false, confirm: false, result: null },
     catErr: null,
     prices: store.get('gPrices', {}),   // { [def]: { p, at } } — pazardaki güncel fiyat (0 = ilan yok)
+    graded: store.get('gGraded', {}),   // { [setId]: { best, manual } } — oyundaki derece geri gitmez (summarise)
     toGrade: store.get('gToGrade', {}), // { [setId]: at } — kart alınıp oyunda notlandırılması gereken setler
     listOpen: false,
     // çoklu seçim: ids = alım sırası; grade[id] = sete özel hedef; target = genel hedef (null = en yüksek)
@@ -2009,6 +2233,21 @@
       const d = store.get('gdefs:' + s.id, null);
       if (d?.defs) gal.defs.set(s.id, d.defs);
     }
+  }
+  // Oyundaki derece (null = otomatik): kartlar satılınca EA onları toplanmış saymaz, kullanıcı dereceyi sabitler
+  function setGraded(id, value, reset = false) {
+    if (reset) delete gal.graded[id];
+    else gal.graded[id] = { ...(gal.graded[id] || {}), manual: value || null };
+    store.set('gGraded', gal.graded);
+    const set = gal.cat?.sets.find((s) => s.id === id);
+    const defs = gal.defs.get(id);
+    if (set && defs && gal.summary[id]) {
+      set.floor = floorScore(set, gal.graded[id]);
+      const s = summarise(set, defs);
+      Object.assign(gal.summary[id], { score: s.score, grade: s.grade, earned: s.earned });
+      store.set('gSummary', gal.summary);
+    }
+    render();
   }
   function markToGrade(id, on = true) {
     if (on) gal.toGrade[id] = Date.now(); else delete gal.toGrade[id];
@@ -2134,6 +2373,10 @@
     return [...byDef.values()];
   }
   function saveSetDefs(set, defs, reqs = null) {
+    const g = gal.graded[set.id] || {};
+    const live = summarise({ ...set, floor: 0 }, defs).live;
+    if (live > (g.best || 0)) { gal.graded[set.id] = { ...g, best: live }; store.set('gGraded', gal.graded); }
+    set.floor = floorScore(set, gal.graded[set.id]);
     const s = summarise(set, defs);
     gal.summary[set.id] = {
       collected: s.collected, required: s.required, total: s.total, score: s.score, grade: s.grade, earned: s.earned,
@@ -2722,6 +2965,14 @@
       diag.text = diagReport(r, { app, set: set.name, overview, scan, sets: diagSetList(gal.summary, okSets), saved: sm ? { c: sm.collected, n: sm.total, sc: sm.score } : null });
       diag.running = false; render();
     };
+    const deep = async () => {
+      diag.running = true; diag.full = false; diag.armed = false; diag.text = L('diag.deep.running'); render();
+      let r;
+      try { r = await deepProbe(); } catch (e) { r = { error: String(e?.message || e) }; }
+      const app = 'userscript v' + (typeof GM_info !== 'undefined' ? GM_info.script?.version : '?') + ' · ' + (typeof GM_info !== 'undefined' ? GM_info.scriptHandler || '' : '');
+      diag.text = deepReport(r, { app });
+      diag.running = false; render();
+    };
     const ta = h('textarea', { id: 'fcgu-diag-ta', readOnly: true, value: diag.armed ? L('diag.all.note', { sets: okSets.length, reqs }) : diag.text, placeholder: L('diag.ph'), style: 'width:100%;height:220px;margin-top:10px;font:11px/1.4 ui-monospace,Consolas,monospace;box-sizing:border-box' });
     return h('div', { class: 'md', onclick: (e) => { if (e.target === e.currentTarget) close(); } }, [h('div', { class: 'box', style: 'width:min(720px,100%)' }, [
       h('h3', { text: L('diag.title') }),
@@ -2731,6 +2982,7 @@
       ta,
       h('div', { class: 'row end' }, [
         h('button', { class: 'g', text: L('close'), onclick: close }),
+        h('button', { class: 'g', text: L('diag.deep'), title: L('diag.deep.title'), disabled: diag.running, onclick: deep }),
         h('button', { class: 'g', text: L('diag.copy'), disabled: !diag.text || diag.running, onclick: async (e) => {
           const b = e.currentTarget;
           try { await navigator.clipboard.writeText(diag.text); b.textContent = L('diag.copied'); } catch (_) { ta.select(); }
@@ -2826,6 +3078,14 @@
     const head = sum ? h('div', {}, [
       h('div', {}, [L('hd.line', { c: sum.collected, r: set.required }), h('b', { text: fmt(sum.score) }), L('hd.line2', { g: sum.grade || '—', e: sum.earned, m: sum.maxTokens })]),
       h('div', { class: 'mut', text: sum.next ? L('hd.next', { g: sum.next.g, n: fmt(sum.need) }) : L('hd.top') }),
+      (() => {
+        const sel = h('select', { title: L('ingame.title'), onchange: (e) => setGraded(set.id, e.target.value) },
+          [h('option', { value: '', text: L('ingame.auto') }), ...set.grades.map((g) => h('option', { value: g.g, text: g.g }))]);
+        sel.value = gal.graded[set.id]?.manual || '';
+        return h('div', { class: 'mut', style: 'margin-top:6px' }, [L('ingame.label') + ' ', sel, ' ',
+          gal.graded[set.id] ? h('button', { class: 'g', text: L('ingame.reset'), title: L('ingame.reset.title'), onclick: () => setGraded(set.id, null, true) }) : null,
+          sum.score > sum.live ? h('div', { text: L('ingame.note', { g: sum.grade || '—', n: fmt(sum.live), lg: gradeFor(set, sum.live).grade || '—' }) }) : null]);
+      })(),
     ]) : null;
 
     const tabs = set.sol ? h('div', { class: 'gtabs' }, set.grades.map((g) => {
@@ -3317,6 +3577,7 @@
   }
   function renderNow() {
     if (!ui) return;
+    if (gal.cat) applyFloors(gal.cat.sets, gal.graded);
     const g = gal.view !== 'list';
     ui.galEl.hidden = !g;
     ui.listEl.hidden = g;
