@@ -617,7 +617,30 @@ async function markToGrade(ids) {
   await chrome.storage.local.set({ galleryToGrade });
 }
 
-// Token planlayıcının seçtiği setler: [{ setId, grade }] sırayla; her setten sonra set yeniden eşitlenir.
+// Çoklu alımda derece kararından önce: derecenin eksik kartlarına pazardan güncel fiyat.
+// Son 10 dk'da bakılan kart atlanır (alt dereceye düşülünce ortak kartlar yeniden aranmaz). false = durduruldu.
+const RECHECK_MS = 10 * 60 * 1000;
+async function priceFresh(my, set, grade, defs, label) {
+  const all = await loadPrices();
+  const plan = planFromTier(set, grade, defs);
+  const todo = (plan ? plan.cards.filter((c) => !c.col) : []).filter((c) => !(all[c.def] && Date.now() - all[c.def].at < RECHECK_MS));
+  for (const [i, c] of todo.entries()) {
+    if (my !== token) return false;
+    await status(label + T('bg.live', { name: c.name || '#' + c.def, i: i + 1, n: todo.length }), 'ok', my);
+    try {
+      const a = await findCheapest(baseOf(c.def), c.def, c.rare > 1 && c.price >= 1000 ? { minb: Math.floor(c.price * 0.5) } : null);
+      await savePrice(c.def, a ? a.buyNowPrice : 0);
+    } catch (err) {
+      const why = stopReason(err);
+      if (why) { notify(T('bg.haltTitle'), why); await stop(why, 'error', my); return false; }
+    }
+    await sleep(rnd(700, 1500));
+  }
+  return my === token;
+}
+
+// Token planlayıcının seçtiği setler: [{ setId, grade }] sırayla. Her setten önce set eşitlenir
+// (oyunda alınan/satılan kartlar), oto derecede seçilen derecenin kartlarına canlı fiyat bakılır; sonra yine eşitlenir.
 async function buyBatch(my, items) {
   await refreshCoinsRun();
   const cat = await loadCat();
@@ -631,26 +654,41 @@ async function buyBatch(my, items) {
     const set = cat.sets.find((x) => x.id === it.setId);
     if (!set) continue;
     if (set.filter?.unsupported) { done.push(T('bg.unsupported', { name: set.name })); continue; }
+    const label = `[${i + 1}/${items.length}] ${set.name} · `;
     const { [defsKey(set.id)]: saved } = await chrome.storage.local.get(defsKey(set.id));
-    if (!saved) { done.push(T('bg.unsyncedSkip', { name: set.name })); continue; }
-    const live = freshPrices(await loadPrices());
+    let defs = saved?.defs || null;
+    await status(label + T('bg.syncing1', { name: set.name }), 'ok', my);
+    try { defs = await fetchSetDefs(set.filter, pause); await saveSetDefs(set, defs); } catch (err) {
+      const why = stopReason(err);
+      if (why) { notify(T('bg.haltTitle'), why); return stop(why, 'error', my); }
+    }
+    if (my !== token) return;
+    if (!defs) { done.push(T('bg.unsyncedSkip', { name: set.name })); continue; }
     let grade = it.grade;
-    // Çoklu seçim (auto): o anki coin/bütçe ve fiyatlarla hedeften aşağı ulaşılabilir en yüksek derece
+    // Çoklu seçim (auto): o anki coin/bütçe ve CANLI fiyatlarla hedeften aşağı ulaşılabilir en yüksek derece.
+    // Seçilen derecenin kartları fiyatlanır, karar yeniden verilir; derece değişirse yenisi de fiyatlanır (en çok 3 derece).
     if (it.auto) {
       const { settings: st, run } = await load();
       const { galleryBuySpent = 0 } = await chrome.storage.local.get('galleryBuySpent');
       let avail = run.coins ?? null;
       if (st.galleryBudget > 0) avail = Math.min(avail ?? Infinity, Math.max(0, st.galleryBudget - galleryBuySpent));
-      const p = pickGrade(set, saved.defs, live, it.grade || null, avail);
+      const seen = new Set();
+      let p;
+      for (;;) {
+        p = pickGrade(set, defs, freshPrices(await loadPrices()), it.grade || null, avail);
+        if (!p.g || seen.has(p.g) || seen.size >= 3) break;
+        seen.add(p.g);
+        if (!(await priceFresh(my, set, p.g, defs, label))) return;
+      }
       if (!p.g) { done.push(T('bg.autoNone.' + p.why, { name: set.name })); continue; }
       if (p.fell) done.push(T('bg.autoFell', { name: set.name, from: it.grade, to: p.g }));
       grade = p.g;
     }
-    const plan = planFromTier(set, grade, saved.defs, live);
+    const plan = planFromTier(set, grade, defs, freshPrices(await loadPrices()));
     const todo = plan ? plan.cards.filter((c) => !c.col) : [];
     if (!todo.length) { if (plan) done.push(T('bg.autoReady', { name: set.name, g: grade })); continue; }
     const { settings } = await load();
-    const r = await buyCards(my, set, buyTargets(todo, settings.maxCard), `[${i + 1}/${items.length}] ${set.name} · `, ctx);
+    const r = await buyCards(my, set, buyTargets(todo, settings.maxCard), label, ctx);
     total += r.bought;
     if (r.halt === 'stopped' || r.halt === 'error') { if (r.bought) await markToGrade([set.id]); return; }
     try { await saveSetDefs(set, await fetchSetDefs(set.filter, pause)); } catch (_) {}   // alınanlar toplandı mı
