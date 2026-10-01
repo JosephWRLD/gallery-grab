@@ -1,6 +1,6 @@
 import { loadCatalog } from './lib/catalog.js';
 import {
-  summarise, cheapestFill, counted as countedOf, GRADES, baseOf,
+  summarise, applyFloors, gradeFor, cheapestFill, counted as countedOf, GRADES, baseOf,
   syncEstimate, fmtDur, planFromTier, defaultTier, pickGrade, pickBatch, bestNext, tierOptions, planTokens, HALL_OF_FUT,
   sortOptions, showOptions, sortFilterSets, tokenLabel, tokenRows, overview, reachableScore, nextMilestone,
 } from './lib/gallery.js';
@@ -169,7 +169,8 @@ const summaryEarned = (set, s) => s.earned ?? set.grades.filter((g) => s.score >
 
 async function render() {
   if (!CAT) return;
-  state = await chrome.storage.local.get(['gallerySummary', 'galleryRun', 'gallerySettings', 'galleryMeta', 'galleryBuySpent', 'gallerySyncStats', 'galleryLevel', 'galleryToGrade', 'galleryPrices']);
+  state = await chrome.storage.local.get(['gallerySummary', 'galleryRun', 'gallerySettings', 'galleryMeta', 'galleryBuySpent', 'gallerySyncStats', 'galleryLevel', 'galleryToGrade', 'galleryPrices', 'galleryGraded']);
+  applyFloors(CAT.sets, state.galleryGraded || {});
   if (!CAT.categories.some((c) => c.id === tab)) tab = CAT.categories[0].id;
   renderTabs();
   const img = imgUrls(state.galleryMeta?.imgBase);
@@ -297,6 +298,14 @@ function openDiag() {
   const run = h('button', { class: 'b', text: t('diag.run') });
   const all = h('button', { class: 'g', text: t('diag.all'), title: t('diag.all.title') });
   const copy = h('button', { class: 'g', text: t('diag.copy'), disabled: true });
+  const deep = h('button', { class: 'g', text: t('diag.deep'), title: t('diag.deep.title') });
+  deep.onclick = async () => {
+    deep.disabled = run.disabled = true; copy.disabled = true;
+    out.value = t('diag.deep.running');
+    const r = await send({ type: 'deepDiag' }).catch((e) => ({ ok: false, error: e.message }));
+    out.value = r?.ok ? r.text : t('diag.fail', { e: r?.error || t('error') });
+    deep.disabled = run.disabled = false; copy.disabled = !r?.ok;
+  };
   let armed = false, poll = null;
   const go = async (full) => {
     run.disabled = true;
@@ -343,7 +352,7 @@ function openDiag() {
         sets.map((s) => h('option', { value: String(s.id), selected: s.id === diagId, text: s.name + (sums[s.id] ? ` (${sums[s.id].collected}/${sums[s.id].total})` : '') }))),
     ]),
     out,
-    h('div', { class: 'row' }, [h('button', { class: 'g', text: t('close'), onclick: closeModal }), all, copy, run]),
+    h('div', { class: 'row' }, [h('button', { class: 'g', text: t('close'), onclick: closeModal }), deep, all, copy, run]),
   );
   $('mdBox').className = 'box wide';
   $('md').hidden = false;
@@ -361,6 +370,19 @@ document.addEventListener('keydown', (e) => {
 });
 
 // fut.gg çözüm sekmeleri: her not için coin + token; çözümü olmayan not "ulaşılamaz"
+// Oyundaki derece: kartlar satılınca EA onları toplanmış saymaz; kullanıcı kazandığı dereceyi sabitleyebilir
+function inGameRow(set, sum) {
+  const manual = state.galleryGraded?.[set.id]?.manual || '';
+  const sel = h('select', { title: t('ingame.title'), onchange: (e) => send({ type: 'setGraded', id: set.id, value: e.currentTarget.value || null }) },
+    [h('option', { value: '', text: t('ingame.auto') }), ...set.grades.map((g) => h('option', { value: g.g, text: g.g }))]);
+  sel.value = manual;
+  return h('div', { class: 'note', style: 'margin-top:8px' }, [
+    t('ingame.label'), ' ', sel, ' ',
+    state.galleryGraded?.[set.id] ? h('button', { class: 'g', text: t('ingame.reset'), title: t('ingame.reset.title'), onclick: () => send({ type: 'setGraded', id: set.id, reset: true }) }) : null,
+    sum.score > sum.live ? h('div', { text: t('ingame.note', { g: sum.grade || '—', n: fmt(sum.live), lg: gradeFor(set, sum.live).grade || '—' }) }) : null,
+  ].filter(Boolean));
+}
+
 function gradeTabs(set, sum, defs, prices) {
   return h('div', { class: 'gtabs' }, set.grades.map((g) => {
     const p = planFromTier(set, g.g, defs, prices);
@@ -481,6 +503,7 @@ async function renderDetail() {
       h('div', {}, [t('hd.line', { c: sum.collected, r: set.required }), h('b', { text: fmt(sum.score) }), t('hd.line2', { g: sum.grade || '—', e: sum.earned, m: sum.maxTokens })]),
       h('div', { class: 'note', text: sum.next ? t('hd.next', { g: sum.next.g, n: fmt(sum.need) }) + (sum.nextPaying && sum.nextPaying !== sum.next ? t('hd.nextPay', { g: sum.nextPaying.g, n: fmt(sum.needPaying) }) : '') : t('hd.top') }),
       h('div', { class: 'prog' }, [h('i', { style: `width:${Math.min(100, (sum.score / top) * 100).toFixed(1)}%` })]),
+      inGameRow(set, sum),
     ]);
   }
 

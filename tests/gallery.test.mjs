@@ -24,6 +24,20 @@ function mkSet(over = {}) {
 const def = (d, sc, col, extra = {}) => ({ def: d, name: 'P' + d, r: 70, rare: 0, sc, col, tradable: true, ...extra });
 
 // ---------------------------------------------------------------- puan / not
+test('summarise: oyundaki derece tabanı (satılan kartlar) puanı düşürmez', () => {
+  const set = mkSet();
+  const defs = [def(1, 100, true), def(2, 200, false), def(3, 300, false)];
+  assert.equal(G.summarise(set, defs).score, 100);
+  G.applyFloors([set], { 1: { best: 1000 } });
+  const s = G.summarise(set, defs);
+  assert.equal(s.score, 1000); assert.equal(s.live, 100); assert.equal(s.grade, 'S');
+  assert.equal(G.pickGrade(set, defs).why, 'done');   // S kazanılmış: yeniden alım önerilmez
+  G.applyFloors([set], { 1: { best: 1000, manual: 'A' } });   // elle seçilen derece best'in yerine geçer
+  assert.equal(G.summarise(set, defs).grade, 'A');
+  G.applyFloors([set], {});
+  assert.equal(G.summarise(set, defs).score, 100);
+});
+
 test('summarise: toplananların en yüksek required tanesi sayılır', () => {
   const set = mkSet();
   const defs = [def(1, 50, true), def(2, 400, true), def(3, 300, true), def(4, 250, true), def(5, 999, false)];

@@ -5,6 +5,20 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [2.2.1] / [1.5.1] — 2026-10-01
+
+### Eklendi
+- **Derin teşhis** (Teşhis penceresi): oyundaki galeri derecesinin Web App'te bir yerde olup olmadığını aramak için
+  global sınıfları, servis/depo metotlarını, sabitleri, bu oturumda atılan UT adreslerini, yüklü uygulama kodundaki
+  galeri/derece geçen adları, adresleri ve çevrelerini, dil dosyasındaki galeri metinlerini ve sayfa depolamasının
+  anahtar adlarını raporlar. EA sunucusuna istek atmaz; SID, persona ve depolama değerleri rapora girmez.
+
+### Düzeltildi
+- **Oyunda notlandırılan derece geri düşüyordu** (ör. Frosinone oyunda S, galeride A): alınan kartlar satılınca EA
+  onları artık toplanmış saymıyor ve derece kulüpteki kartlardan yeniden hesaplanıyordu. Artık eşitlemelerde görülen
+  en yüksek puan hatırlanır ve derece bunun altına inmez; detayda **Oyundaki derece** seçicisiyle (Otomatik / D–S)
+  oyundaki derece elle sabitlenebilir; **Sıfırla** düğmesi set için hatırlanan puanı ve seçimi siler. Planlayıcı ve otomatik derece seçimi de bu dereceyi kazanılmış sayar.
+
 ## [2.2.0] / [1.5.0] — 2026-09-30
 
 ### Eklendi
