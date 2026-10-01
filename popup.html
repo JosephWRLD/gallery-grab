@@ -54,6 +54,8 @@
   /* Web App sol menüsünden iframe içinde açılınca */
   body.embedded { width:100%; min-height:100vh; }
   body.embedded header { display:none; }
+  #upd { display:block; padding:6px 12px; background:#3a2e10; color:#f5b942; font-weight:600; font-size:12px; text-decoration:none; }
+  #upd[hidden] { display:none; }
   body.embedded main { max-width:760px; margin:0 auto; padding:12px 0; }
   body.embedded #results { max-height:260px; }
   body.embedded #list { max-height:none; }
@@ -61,6 +63,7 @@
 </head>
 <body>
 <header><img src="icons/logo.png" alt=""><b>Gallery Grab</b><span class="mut" id="count"></span><button id="contact" title="Discord kullanıcı adını kopyala" style="padding:3px 8px;font-size:11px">💬 Discord yusuflnx</button></header>
+<a id="upd" target="_blank" hidden></a>
 <main>
 <section class="row" style="justify-content:space-between">
   <span class="mut">Setler, notlar ve eksik kartlar · destek &amp; fikir: Discord <b>yusuflnx</b></span>

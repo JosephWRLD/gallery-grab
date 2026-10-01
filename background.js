@@ -4,6 +4,7 @@ import { imgUrls } from './lib/img.js';
 import { prevPrice } from './lib/pricing.js';
 import { fetchSetDefs, diagnoseConcept, deepDiagnose } from './lib/gallery-api.js';
 import { loadCatalog, refreshCatalog } from './lib/catalog.js';
+import { checkUpdate } from './lib/update.js';
 import { summarise, applyFloors, floorScore, priceCandidates, cheapestFill, baseOf, syncEstimate, planFromTier, pickGrade, fmtDur, relistPrice, buyTargets, MAX_CARD_DEFAULT, diagCrit, diagReport, diagOverview, diagSetList, diagScan, deepReport } from './lib/gallery.js';
 import { makeT, detectLang, localeOf } from './lib/i18n.js';
 
@@ -939,6 +940,7 @@ chrome.runtime.onMessage.addListener((msg, _s, reply) => {
         metaOrNull();
         return { ok: true, info };
       }
+      case 'checkUpdate': return { ok: true, ...(await checkUpdate(!!msg.force)) };   // yeni sürüm uyarısı (6 saatte bir GitHub)
       case 'openGalleryTab': await chrome.tabs.create({ url: chrome.runtime.getURL('gallery.html') }); return { ok: true };
       case 'refreshCoins': { const coins = parseCoins(await api.credits()); await patchRun({ coins }); return { ok: true, coins }; }
       case 'scanPrices': return startTask(scanPrices, 'Fiyat taraması başladı');

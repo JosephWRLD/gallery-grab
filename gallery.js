@@ -6,6 +6,7 @@ import {
 } from './lib/gallery.js';
 import { makeT, detectLang, localeOf, LANGS, FLAGS } from './lib/i18n.js';
 import { imgUrls } from './lib/img.js';
+import { RELEASES } from './lib/update.js';
 
 const $ = (id) => document.getElementById(id);
 let lang = detectLang();
@@ -781,4 +782,16 @@ chrome.storage.onChanged.addListener((c, area) => {
   const r = await send({ type: 'catalog' }).catch(() => null);
   if (r?.info?.changed) { CAT = await loadCatalog(); render(); }
   send({ type: 'refreshCoins' }).catch(() => {});
+  showUpdate();
 })();
+
+// Yeni sürüm uyarısı: paketlenmemiş eklenti kendiliğinden güncellenmez
+async function showUpdate() {
+  const u = await send({ type: 'checkUpdate' }).catch(() => null);
+  const a = $('upd');
+  if (!u?.latest) { a.hidden = true; return; }
+  a.href = RELEASES;
+  a.textContent = t('upd.avail', { v: u.latest });
+  a.title = t('upd.title', { c: u.current });
+  a.hidden = false;
+}
