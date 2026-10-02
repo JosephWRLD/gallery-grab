@@ -133,6 +133,8 @@ test('buyTargets: maxb = sınır, özel sürümde minb (sınırın altında)', (
   assert.equal(a.ref, 700);
   assert.equal(a.gg, 700);
   assert.equal(b.gg, 20000);
+  assert.equal(a.rare, 0);
+  assert.equal(b.rare, 3);
   assert.equal(b.ref, 22000);
   assert.equal(b.range.maxb, 27500);
   assert.equal(b.range.minb, 11000);

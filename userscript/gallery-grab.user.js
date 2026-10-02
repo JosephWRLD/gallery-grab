@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gallery Grab
 // @namespace    https://github.com/JosephWRLD/gallery-grab
-// @version      2.2.3
+// @version      2.2.4
 // @description  FC Web App: FUT Galeri setleri, notlar, fut.gg çözümleri, token planlayıcı ve eksik kartları alma; oyuncu listesinden en ucuz kart alma
 // @author       JosephWRLD — Discord: yusuflnx
 // @license      PolyForm-Noncommercial-1.0.0 (ticari kullanım/satış yasak)
@@ -40,6 +40,7 @@
 
   const PROBE_MAX = 5;   // en ucuzu bulmak için en fazla arama
   const PAGE_MAX = 3;    // tam sürüm aranırken aynı fiyat aralığında bakılan en fazla sayfa
+  const PAGE_FULL = 20;  // num=21 istenir; 20+ ilan = sayfa dolu (EA en çok 20 döndürse de güvenli taraf)
   const RETRY_MAX = 3;   // ilan başkası tarafından alınırsa yeniden deneme
   const META_TTL = 7 * 24 * 60 * 60 * 1000;
   const META_V = 3;
@@ -221,10 +222,12 @@
   }
 
   const api = {
-    search: ({ maskedDefId, maxb, minb, num = 21, start = 0 }) => {
+    // rare: EA nadirlik kimliği (rareflag) → rarityIds; Web App'in nadirlik filtresiyle aynı alan
+    search: ({ maskedDefId, maxb, minb, rare, num = 21, start = 0 }) => {
       const q = { num, start, type: 'player', maskedDefId };
       if (maxb) q.maxb = maxb;
       if (minb) q.minb = minb;
+      if (rare) q.rarityIds = rare;
       return call('GET', '/transfermarket', { query: q });
     },
     buyNow: (tradeId, price) => call('PUT', `/trade/${tradeId}/bid`, { body: { bid: price } }),
@@ -734,6 +737,12 @@
     'btn.syncAll.title': "Tüm kulüp, lig ve nadirlik setlerini EA'dan eşitler",
     'btn.catRefresh': 'Kataloğu yenile',
     'btn.diag': 'Teşhis',
+    'btn.buys': 'Son alımlar',
+    'btn.buys.title': 'Galeriden alınan son kartlar: ödenen fiyat ve fut.gg fiyatı',
+    'buys.title': 'Son alımlar',
+    'buys.empty': 'Henüz galeriden kart alınmadı.',
+    'buys.note': 'fut.gg fiyatının %{x} fazlasından pahalı alınanlar sarı. Bu kartlarda pazarda daha ucuzu yoktu (arama kesinleşti).',
+    'buys.when': 'Zaman', 'buys.set': 'Set', 'buys.card': 'Kart', 'buys.paid': 'Ödenen', 'buys.gg': 'fut.gg',
     'btn.diag.title': "Setler 0/N görünüyorsa: EA'nın toplanma bilgisini ne döndürdüğünü raporlar (alım yapmaz)",
     'diag.title': 'Teşhis — toplanma bilgisi',
     'diag.body': "Oyunda notlandırdığın (✓ olması gereken) bir seti seç ve Çalıştır'a bas. Rapor alım yapmaz, kişisel bilgi içermez; Kopyala ile Discord'dan yusuflnx'e gönder.",
@@ -1056,6 +1065,12 @@
     'btn.syncAll.title': 'Syncs every club, league and rarity set from EA',
     'btn.catRefresh': 'Refresh catalog',
     'btn.diag': 'Diagnose',
+    'btn.buys': 'Recent buys',
+    'btn.buys.title': 'Cards recently bought from the gallery: price paid and fut.gg price',
+    'buys.title': 'Recent buys',
+    'buys.empty': 'No cards bought from the gallery yet.',
+    'buys.note': 'Cards bought for more than {x}% above fut.gg are yellow. No cheaper listing existed for them (search was conclusive).',
+    'buys.when': 'Time', 'buys.set': 'Set', 'buys.card': 'Card', 'buys.paid': 'Paid', 'buys.gg': 'fut.gg',
     'btn.diag.title': "If sets show 0/N: reports what EA returns as collection status (buys nothing)",
     'diag.title': 'Diagnose — collection status',
     'diag.body': "Pick a set you have graded in game (it should show ✓) and press Run. The report buys nothing and has no personal data; Copy it and send it to yusuflnx on Discord.",
@@ -1649,7 +1664,7 @@
       const range = {};
       if (minb && (!cap || minb < cap)) range.minb = minb;
       if (cap) range.maxb = cap;
-      return { def: c.def, name: c.name || '#' + c.def, ref, gg: c.price || 0, cap, range: Object.keys(range).length ? range : null };
+      return { def: c.def, name: c.name || '#' + c.def, ref, gg: c.price || 0, rare: c.rare || 0, cap, range: Object.keys(range).length ? range : null };
     });
   }
 
@@ -2446,25 +2461,37 @@
   // Belirli sürümün (definitionId) en ucuz ilanı; range: beklenen fiyat çevresi (özel sürümler kaybolmasın)
   // Bulunan en ucuzdan bir basamak aşağısı (maxb) ile tekrar aranır; trail.lo = ilan çıkmayan son üst sınır,
   // trail.sure = "daha ucuzu yok" kesinleşti. EA sonucu bitiş süresine göre sıralar ve maskedDefId tüm sürümleri getirir:
-  // sayfa başka sürümlerle doluysa aranan sürüm sonraki sayfalarda olabilir — boş süzülmüş sayfa "ilan yok" demek değildir.
-  async function findCheapestDef(def, range = null, trail = null) {
+  // özel sürümde (rare > 1) arama nadirliğe daraltılır (rarityIds); EA filtreyi uygulamıyorsa (başka nadirlik ya da 400)
+  // rarityOk=false olur ve sayfalı yönteme dönülür. 20'den az ilanlı sayfa = aralıktaki tüm ilanlar görüldü.
+  let rarityOk = null;
+  const rareOf = (a) => (a.itemData?.rareflag != null ? Number(a.itemData.rareflag) : null);
+  async function findCheapestDef(def, range = null, trail = null, rare = 0) {
+    const byRare = rare > 1 && rarityOk !== false;
+    const again = () => { rarityOk = false; return findCheapestDef(def, range, trail, 0); };
     let best = null;
     let hi = range?.maxb || 0;
+    const lo = byRare ? 0 : range?.minb || 0;   // nadirliğe daralınca alt sınır gereksiz
     let sure = false;
     probe: for (let i = 0; i < PROBE_MAX; i++) {
       let bins = [];
-      for (let pg = 0; pg < PAGE_MAX; pg++) {
+      let raw = [];
+      for (let pg = 0; pg < (byRare ? 1 : PAGE_MAX); pg++) {
         if (pg) await sleep(rnd(400, 900));
-        const q = { maskedDefId: baseOf(def), num: 21, start: pg * 20, ...(hi > 0 ? { maxb: hi } : {}), ...(range?.minb ? { minb: range.minb } : {}) };
-        const res = await api.search(q);
-        bins = activeBins(res).filter((a) => Number(a.itemData?.resourceId ?? a.itemData?.definitionId) === def);
+        const q = { maskedDefId: baseOf(def), num: 21, start: pg * 20, ...(hi > 0 ? { maxb: hi } : {}), ...(lo ? { minb: lo } : {}), ...(byRare ? { rare } : {}) };
+        let res;
+        try { res = await api.search(q); } catch (e) { if (byRare && e instanceof ApiError && e.status === 400) return again(); throw e; }
+        raw = res?.auctionInfo || [];
+        if (byRare && raw.some((x) => rareOf(x) != null && rareOf(x) !== rare)) return again();
+        if (byRare && raw.length) rarityOk = true;
+        bins = activeBins(res).filter((x) => Number(x.itemData?.resourceId ?? x.itemData?.definitionId) === def);
         if (bins.length) break;
-        if ((res?.auctionInfo || []).length < 21) { if (best && trail) trail.lo = hi; sure = true; break probe; }
+        if (raw.length < PAGE_FULL) { if (best && trail) trail.lo = hi; sure = true; break probe; }
       }
-      if (!bins.length) break;   // PAGE_MAX sayfa başka sürümlerle dolu: emin değiliz
-      const cand = bins.reduce((m, a) => (a.buyNowPrice < m.buyNowPrice ? a : m));
+      if (!bins.length) break;   // sayfalar başka sürümlerle dolu: emin değiliz
+      const cand = bins.reduce((m, x) => (x.buyNowPrice < m.buyNowPrice ? x : m));
       if (!best || cand.buyNowPrice < best.buyNowPrice) best = cand;
-      if (best.buyNowPrice <= 200 || (range?.minb && best.buyNowPrice <= range.minb)) { sure = true; break; }
+      if (raw.length < PAGE_FULL) { if (trail) trail.lo = prevPrice(best.buyNowPrice); sure = true; break; }   // tüm ilanlar görüldü
+      if (best.buyNowPrice <= 200 || (lo && best.buyNowPrice <= lo)) { sure = true; break; }
       hi = prevPrice(best.buyNowPrice);
       await sleep(rnd(400, 900));
     }
@@ -2533,7 +2560,7 @@
       status(L('bg.live', { name, i: i + 1, n: todo.length }), 'ok', my);
       try {
         const tr = {};
-        const a = await findCheapestDef(c.def, c.rare > 1 && c.price >= 1000 ? { minb: Math.floor(c.price * 0.5) } : null, tr);
+        const a = await findCheapestDef(c.def, c.rare > 1 && c.price >= 1000 ? { minb: Math.floor(c.price * 0.5) } : null, tr, c.rare);
         const p = a ? a.buyNowPrice : 0;
         if (a && suspiciousPrice(p, c.price, tr.sure)) { changes.push(L('bg.overRef', { name, p: fmt(p), f: fmt(c.price) })); await sleep(rnd(700, 1500)); continue; }
         if (a && tr.lo) trails.push(L('bg.trail', { name, p: fmt(p), lo: fmt(tr.lo) }));
@@ -2566,10 +2593,10 @@
         const noted = notes.length;
         for (let attempt = 1; attempt <= RETRY_MAX && !done; attempt++) {
           const tr = {};
-          const a = await findCheapestDef(t.def, t.range, tr);
+          const a = await findCheapestDef(t.def, t.range, tr, t.rare);
           if (!a) {
             // Sınırın altında ilan yok: gerçek en ucuz fiyatı bul — rapora yazılır, canlı fiyat olarak saklanır
-            const real = t.range?.maxb ? await findCheapestDef(t.def, t.range.minb ? { minb: t.range.minb } : null) : null;
+            const real = t.range?.maxb ? await findCheapestDef(t.def, t.range.minb ? { minb: t.range.minb } : null, null, t.rare) : null;
             savePrice(t.def, real ? real.buyNowPrice : 0);
             notes.push(real ? L('bg.overCap', { name: t.name, p: fmt(real.buyNowPrice), c: fmt(t.range.maxb) }) : L('bg.noListing', { name: t.name }));
             break;
@@ -2587,6 +2614,9 @@
             const r = await api.buyNow(a.tradeId, price);
             const it = r?.auctionInfo?.[0]?.itemData || a.itemData || {};
             galSet('spent', gal.spent + price, 'gSpent');
+            const buys = store.get('gBuys', []);
+            buys.push({ n: t.name, d: t.def, p: price, g: t.gg || 0, s: ctx.setName || '', at: Date.now() });
+            store.set('gBuys', buys.slice(-200));
             run.coins = parseCoins(r) ?? (run.coins != null ? run.coins - price : null);
             bought++;
             done = true;
@@ -2623,6 +2653,7 @@
     try { run.coins = parseCoins(await api.credits()); } catch (_) {}
     const ctx = await buyContext();
     if (ctx.full) return stop(L('bg.tpFull', { n: ctx.tp }), 'warn', my);
+    ctx.setName = set.name;
     const r = await buyCards(my, buyTargets(todo, settings.maxCard), '', ctx);
     if (r.halt === 'stopped' || r.halt === 'error') { if (r.bought) markToGrade(set.id); return; }
     await resync(set);
@@ -2645,7 +2676,7 @@
       status(label + L('bg.live', { name: c.name || '#' + c.def, i: i + 1, n: todo.length }), 'ok', my);
       try {
         const tr = {};
-        const a = await findCheapestDef(c.def, c.rare > 1 && c.price >= 1000 ? { minb: Math.floor(c.price * 0.5) } : null, tr);
+        const a = await findCheapestDef(c.def, c.rare > 1 && c.price >= 1000 ? { minb: Math.floor(c.price * 0.5) } : null, tr, c.rare);
         if (!a || !suspiciousPrice(a.buyNowPrice, c.price, tr.sure)) savePrice(c.def, a ? a.buyNowPrice : 0);
       } catch (err) {
         const why = stopReason(err);
@@ -2698,6 +2729,7 @@
       const plan = planFromTier(set, grade, defs, livePrices());
       const todo = plan ? plan.cards.filter((c) => !c.col) : [];
       if (!todo.length) { if (plan) notes.push(L('bg.autoReady', { name: set.name, g: grade })); continue; }
+      ctx.setName = set.name;
       const r = await buyCards(my, buyTargets(todo, settings.maxCard), label, ctx);
       total += r.bought;
       if (r.halt === 'stopped' || r.halt === 'error') { if (r.bought) markToGrade(set.id); return; }
@@ -2840,6 +2872,7 @@
         h('span', { text: gal.catErr ? L('cat.fail', { d: catDate(), e: gal.catErr }) : L('cat', { d: catDate() }) }),
         h('button', { class: 'g', text: L('btn.catRefresh'), onclick: () => refreshCatalog(true) }),
         h('button', { class: 'g', text: L('btn.diag'), title: L('btn.diag.title'), onclick: () => { gal.modal = 'diag'; render(); } }),
+        h('button', { class: 'g', text: L('btn.buys'), title: L('btn.buys.title'), onclick: () => { gal.modal = 'buys'; render(); } }),
         h('label', {}, [L('sort') + ' ', sel(sortOptions(L), gal.sort, (x) => { galSet('sort', x, 'gSort'); render(); })]),
         h('label', {}, [L('show') + ' ', sel(showOptions(L), gal.show, (x) => { galSet('show', x, 'gShow'); render(); })]),
       ]),
@@ -2874,7 +2907,7 @@
       run.running ? h('button', { class: 'dan', text: L('stop'), onclick: () => stop() }) : null,
     );
 
-    g.over.replaceChildren(...[gal.openId ? detailView() : null, gal.modal === 'sync' ? syncModal() : gal.modal === 'planner' ? plannerModal() : gal.modal === 'diag' ? diagModal() : null].filter(Boolean));
+    g.over.replaceChildren(...[gal.openId ? detailView() : null, gal.modal === 'sync' ? syncModal() : gal.modal === 'planner' ? plannerModal() : gal.modal === 'diag' ? diagModal() : gal.modal === 'buys' ? buysModal() : null].filter(Boolean));
   }
 
   // ---------------------------------------------------------------- çoklu seçim
@@ -3060,6 +3093,25 @@
             onclick: () => { if (diag.armed) run(true); else { diag.armed = true; render(); } } }),
         h('button', { class: 'b', text: L('diag.run'), disabled: diag.running, onclick: () => run(false) }),
       ]),
+    ])]);
+  }
+  function buysModal() {
+    const close = () => { gal.modal = null; render(); };
+    const buys = store.get('gBuys', []).slice().reverse();
+    const td = (text, st = '') => h('td', { text, style: 'padding:3px 8px;' + st });
+    const rows = buys.map((b) => {
+      const pct = b.g > 0 ? ` (${b.p >= b.g ? '+' : ''}${Math.round((b.p / b.g - 1) * 100)}%)` : '';
+      return h('tr', { style: b.g > 0 && b.p > b.g * OVER_REF ? 'color:#f5b942' : '' }, [
+        td(new Date(b.at).toLocaleString(LANG === 'en' ? 'en-GB' : 'tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })),
+        td(b.s || ''), td(b.n || '#' + b.d), td(fmt(b.p) + pct, 'text-align:right'), td(b.g ? fmt(b.g) : '—', 'text-align:right'),
+      ]);
+    });
+    const head = h('tr', {}, ['buys.when', 'buys.set', 'buys.card', 'buys.paid', 'buys.gg'].map((k) => h('th', { text: L(k), style: 'padding:3px 8px;text-align:left' })));
+    return h('div', { class: 'md', onclick: (e) => { if (e.target === e.currentTarget) close(); } }, [h('div', { class: 'box wide' }, [
+      h('h3', { text: L('buys.title') }),
+      h('div', { class: 'mut', text: rows.length ? L('buys.note', { x: Math.round((OVER_REF - 1) * 100) }) : L('buys.empty') }),
+      rows.length ? h('div', { style: 'max-height:60vh;overflow:auto;margin-top:8px' }, [h('table', { style: 'border-collapse:collapse;width:100%;font-size:12px' }, [head, ...rows])]) : null,
+      h('div', { class: 'row end' }, [h('button', { class: 'g', text: L('close'), onclick: close })]),
     ])]);
   }
   function syncModal() {

@@ -5,6 +5,19 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [2.2.4] / [1.5.5] — 2026-10-02
+
+### Değişti
+- **Özel kartlarda arama sürüme daraltıldı:** pazar araması kartın nadirliğiyle (`rarityIds`) yapılır; oyuncunun diğer
+  sürümleri sonuçları doldurmaz, doğru sürümün en ucuz ilanı çoğu zaman tek istekte bulunur. EA filtreyi uygulamazsa
+  (başka nadirlik gelirse ya da hata dönerse) otomatik olarak önceki sayfalı yönteme dönülür.
+- **Daha az istek:** 20'den az ilan dönen aramada aralıktaki tüm ilanlar görülmüş sayılır; bir basamak aşağısıyla
+  gereksiz tekrar arama yapılmaz.
+
+### Eklendi
+- **Son alımlar** (galeri ekranı üst çubuğu): galeriden alınan son 200 kart — zaman, set, ödenen fiyat, fut.gg fiyatı
+  ve fark yüzdesi. fut.gg'nin %40'tan fazla üstünde alınanlar sarı.
+
 ## [2.2.3] / [1.5.4] — 2026-10-02
 
 ### Düzeltildi
