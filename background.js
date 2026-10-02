@@ -5,7 +5,7 @@ import { prevPrice } from './lib/pricing.js';
 import { fetchSetDefs, diagnoseConcept, deepDiagnose } from './lib/gallery-api.js';
 import { loadCatalog, refreshCatalog } from './lib/catalog.js';
 import { checkUpdate } from './lib/update.js';
-import { summarise, applyFloors, floorScore, priceCandidates, cheapestFill, baseOf, syncEstimate, planFromTier, pickGrade, fmtDur, relistPrice, buyTargets, MAX_CARD_DEFAULT, diagCrit, diagReport, diagOverview, diagSetList, diagScan, deepReport } from './lib/gallery.js';
+import { summarise, applyFloors, floorScore, priceCandidates, cheapestFill, baseOf, syncEstimate, planFromTier, pickGrade, fmtDur, relistPrice, buyTargets, suspiciousPrice, MAX_CARD_DEFAULT, diagCrit, diagReport, diagOverview, diagSetList, diagScan, deepReport } from './lib/gallery.js';
 import { makeT, detectLang, localeOf } from './lib/i18n.js';
 
 // Galeri durum mesajlarının dili (Galeri ekranındaki TR/EN seçimi; yoksa tarayıcı dili)
@@ -19,6 +19,7 @@ const fmt = (n) => Math.round(n).toLocaleString(localeOf(LANG));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 const PROBE_MAX = 5;   // en ucuzu bulmak için en fazla arama sayısı
+const PAGE_MAX = 3;    // tam sürüm aranırken aynı fiyat aralığında bakılan en fazla sayfa
 const RETRY_MAX = 3;   // ilan başkası tarafından alınırsa yeniden deneme
 const DEFAULT_RUN = { running: false, spent: 0, coins: null, text: '', level: 'idle', ts: 0 };
 const TP_MAX = 100;    // transfer listesi kapasitesi
@@ -148,20 +149,32 @@ const activeBins = (res) => (res?.auctionInfo || [])
 const defOf = (a) => Number(a.itemData?.resourceId ?? a.itemData?.definitionId ?? 0);
 // range {minb, maxb}: özel sürümler baz kart ilanları arasında kaybolmasın diye beklenen fiyat çevresinde ara.
 // Bulunan en ucuzdan bir basamak aşağısı (maxb) ile tekrar aranır; sonuç gelmezse o fiyat en ucuzdur.
-// trail verilirse: trail.lo = ilan çıkmayan son üst sınır (ör. 800 bulundu → 750'de yok).
+// trail verilirse: trail.lo = ilan çıkmayan son üst sınır (ör. 800 bulundu → 750'de yok);
+// trail.sure = "daha ucuzu yok" kesinleşti (false: sayfalar başka sürümlerle doluydu ya da arama hakkı bitti).
+// EA sonucu fiyata değil bitiş süresine göre sıralar ve maskedDefId oyuncunun tüm sürümlerini getirir: sayfa başka
+// sürümlerle doluysa aranan sürüm sonraki sayfalarda olabilir — boş süzülmüş sayfa "ilan yok" demek değildir.
 async function findCheapest(baseId, exactDef = null, range = null, trail = null) {
   let best = null;
   let hi = range?.maxb || 0;
-  for (let i = 0; i < PROBE_MAX; i++) {
-    const res = await api.search({ maskedDefId: baseId, num: 21, ...(hi > 0 ? { maxb: hi } : {}), ...(range?.minb ? { minb: range.minb } : {}) });
-    const list = activeBins(res).filter((a) => !exactDef || defOf(a) === exactDef);
-    if (!list.length) { if (best && trail) trail.lo = hi; break; }
+  let sure = false;
+  probe: for (let i = 0; i < PROBE_MAX; i++) {
+    let list = [];
+    for (let pg = 0; pg < PAGE_MAX; pg++) {
+      if (pg) await sleep(rnd(400, 900));
+      const res = await api.search({ maskedDefId: baseId, num: 21, start: pg * 20, ...(hi > 0 ? { maxb: hi } : {}), ...(range?.minb ? { minb: range.minb } : {}) });
+      const raw = res?.auctionInfo || [];
+      list = activeBins(res).filter((a) => !exactDef || defOf(a) === exactDef);
+      if (list.length) break;
+      if (raw.length < 21) { if (best && trail) trail.lo = hi; sure = true; break probe; }   // sayfalar bitti: yok
+    }
+    if (!list.length) break;   // PAGE_MAX sayfa başka sürümlerle dolu: emin değiliz
     const cand = list.reduce((m, a) => (a.buyNowPrice < m.buyNowPrice ? a : m));
     if (!best || cand.buyNowPrice < best.buyNowPrice) best = cand;
-    if (best.buyNowPrice <= 200 || (range?.minb && best.buyNowPrice <= range.minb)) break;
+    if (best.buyNowPrice <= 200 || (range?.minb && best.buyNowPrice <= range.minb)) { sure = true; break; }
     hi = prevPrice(best.buyNowPrice);
     await sleep(rnd(400, 900));
   }
+  if (trail) trail.sure = sure;
   return best;
 }
 
@@ -550,7 +563,8 @@ async function buyCards(my, set, targets, label = '', ctx = {}) {
       let done = false;
       const noted = notes.length;
       for (let attempt = 1; attempt <= RETRY_MAX && !done; attempt++) {
-        const a = await findCheapest(baseOf(t.def), t.def, t.range);
+        const tr = {};
+        const a = await findCheapest(baseOf(t.def), t.def, t.range, tr);
         if (!a) {
           // Sınırın altında ilan yok: gerçek en ucuz fiyatı bul — rapora yazılır ve canlı fiyat olarak saklanır
           // (bir sonraki denemede sınır bu fiyatın %25 fazlası olur)
@@ -560,6 +574,8 @@ async function buyCards(my, set, targets, label = '', ctx = {}) {
           break;
         }
         const price = a.buyNowPrice;
+        // fut.gg'nin çok üstünde ve daha ucuzunun olmadığı kesinleşmedi: alma, canlı fiyat diye de saklama
+        if (suspiciousPrice(price, t.gg, tr.sure)) { notes.push(T('bg.overRef', { name: t.name, p: fmt(price), f: fmt(t.gg) })); break; }
         await savePrice(t.def, price);
         if (t.cap && price > t.cap) { notes.push(T('bg.overCap', { name: t.name, p: fmt(price), c: fmt(t.cap) })); break; }
         const { galleryBuySpent = 0 } = await chrome.storage.local.get('galleryBuySpent');
@@ -629,8 +645,9 @@ async function priceFresh(my, set, grade, defs, label) {
     if (my !== token) return false;
     await status(label + T('bg.live', { name: c.name || '#' + c.def, i: i + 1, n: todo.length }), 'ok', my);
     try {
-      const a = await findCheapest(baseOf(c.def), c.def, c.rare > 1 && c.price >= 1000 ? { minb: Math.floor(c.price * 0.5) } : null);
-      await savePrice(c.def, a ? a.buyNowPrice : 0);
+      const tr = {};
+      const a = await findCheapest(baseOf(c.def), c.def, c.rare > 1 && c.price >= 1000 ? { minb: Math.floor(c.price * 0.5) } : null, tr);
+      if (!a || !suspiciousPrice(a.buyNowPrice, c.price, tr.sure)) await savePrice(c.def, a ? a.buyNowPrice : 0);
     } catch (err) {
       const why = stopReason(err);
       if (why) { notify(T('bg.haltTitle'), why); await stop(why, 'error', my); return false; }
@@ -726,6 +743,7 @@ async function priceTier(my, set, grade, defs) {
       const tr = {};
       const a = await findCheapest(baseOf(c.def), c.def, c.rare > 1 && c.price >= 1000 ? { minb: Math.floor(c.price * 0.5) } : null, tr);
       const p = a ? a.buyNowPrice : 0;
+      if (a && suspiciousPrice(p, c.price, tr.sure)) { changes.push(T('bg.overRef', { name, p: fmt(p), f: fmt(c.price) })); await sleep(rnd(700, 1500)); continue; }
       if (a && tr.lo) trails.push(T('bg.trail', { name, p: fmt(p), lo: fmt(tr.lo) }));
       await savePrice(c.def, p);
       if (p !== c.price) changes.push(p ? T('bg.liveChange', { name, p: fmt(p), f: fmt(c.price) }) : T('bg.liveNone', { name }));

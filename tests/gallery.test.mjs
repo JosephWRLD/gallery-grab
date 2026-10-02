@@ -109,10 +109,11 @@ test('roundBin: EA fiyat basamakları ve en düşük BIN', () => {
   assert.equal(G.roundBin(150), 200);
 });
 
-test('priceCap: canlı ×1,25; canlı yoksa fut.gg ×2 / +2.000; kullanıcı sınırı üst sınır', () => {
+test('priceCap: canlı ×1,25; canlı yoksa fut.gg ×1,4 / +2.000; kullanıcı sınırı üst sınır', () => {
   assert.equal(G.priceCap({ live: 700, price: 500 }, 0), 850);        // 875 → 850
-  assert.equal(G.priceCap({ price: 700 }, 0), 2700);                  // max(1.400, 2.700)
-  assert.equal(G.priceCap({ price: 10000 }, 0), 20000);               // max(20.000, 12.000)
+  assert.equal(G.priceCap({ price: 700 }, 0), 2700);                  // max(980, 2.700)
+  assert.equal(G.priceCap({ price: 10000 }, 0), 14000);               // max(14.000, 12.000)
+  assert.equal(G.priceCap({ price: 23000 }, 0), 32000);               // Veerman: eskiden 46.000
   assert.equal(G.priceCap({ price: 100000 }, 50000), 50000);          // kullanıcı sınırı
   assert.equal(G.priceCap({}, 0), 0);                                  // referans yok, ayar yok → sınır yok
   assert.equal(G.priceCap({}, 30000), 30000);
@@ -130,10 +131,20 @@ test('buyTargets: maxb = sınır, özel sürümde minb (sınırın altında)', (
   ], 0);
   assert.deepEqual(a.range, { maxb: 2700 });
   assert.equal(a.ref, 700);
+  assert.equal(a.gg, 700);
+  assert.equal(b.gg, 20000);
   assert.equal(b.ref, 22000);
   assert.equal(b.range.maxb, 27500);
   assert.equal(b.range.minb, 11000);
   assert.ok(b.range.minb < b.range.maxb);
+});
+
+test('suspiciousPrice: fut.gg ×1,4 üstü + kesinleşmemiş arama', () => {
+  assert.equal(G.suspiciousPrice(46000, 23000, false), true);    // Veerman
+  assert.equal(G.suspiciousPrice(46000, 23000, true), false);    // daha ucuzu yok kesin → gerçek fiyat
+  assert.equal(G.suspiciousPrice(30000, 23000, false), false);   // ×1,4 içinde
+  assert.equal(G.suspiciousPrice(2700, 700, false), false);      // ucuz kart: fut.gg < 1.000
+  assert.equal(G.suspiciousPrice(5000, 0, false), false);        // referans yok
 });
 
 test('relistPrice: ödenen / piyasa ± yüzde, geçerli basamak', () => {
