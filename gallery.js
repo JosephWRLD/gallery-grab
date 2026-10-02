@@ -123,6 +123,9 @@ function gradeTitle(set, g) {
 }
 
 function renderTabs() {
+  const tabName = CAT.categories.find((c) => c.id === tab)?.name || '';
+  $('syncTab').textContent = t('btn.syncTab', { name: tabName.split(' / ')[0] });   // "Premier League / Barclays WSL" → kısa
+  $('syncTab').title = t('btn.syncTab.title', { name: tabName });
   $('tabs').replaceChildren(...CAT.categories.map((c) => h('button', {
     class: c.id === tab ? 'on' : '', text: c.name,
     onclick: () => { tab = c.id; try { localStorage.setItem('fcg-tab', tab); } catch (_) {} render(); },
@@ -256,15 +259,19 @@ function renderBar() {
   $('status').title = run.text || '';
   const running = !!run.running;
   $('stop').hidden = !running;
-  $('syncAll').disabled = running;
+  $('syncAll').disabled = $('syncTab').disabled = running;
   document.querySelectorAll('[data-task]').forEach((b) => { b.disabled = running; });
 }
 
 // ---------------------------------------------------------------- "Tümünü eşitle" onayı
 let skipRecent = true;
-function openSyncConfirm() {
+// onlyTab: yalnız açık sekmedeki (lig/kategori) setler
+let syncOnlyTab = false;
+function openSyncConfirm(onlyTab = syncOnlyTab) {
+  syncOnlyTab = onlyTab;
   const sums = state.gallerySummary || {};
-  const all = CAT.sets.filter((s) => !s.filter?.unsupported);
+  const tabName = CAT.categories.find((c) => c.id === tab)?.name || '';
+  const all = CAT.sets.filter((s) => !s.filter?.unsupported && (!onlyTab || s.cat === tab));
   const sets = skipRecent ? all.filter((s) => !(sums[s.id]?.at > Date.now() - RECENT)) : all;
   const skipped = all.length - sets.length;
   const est = syncEstimate(sets, sums, state.gallerySyncStats?.secPerReq);
@@ -272,7 +279,7 @@ function openSyncConfirm() {
   const measured = !!state.gallerySyncStats?.secPerReq;
   const avg = (est.sec / Math.max(1, est.sets)).toFixed(1).replace('.', lang === 'en' ? '.' : ',');
   $('mdBox').replaceChildren(
-    h('h3', { text: t('sync.title') }),
+    h('h3', { text: onlyTab ? t('sync.titleTab', { name: tabName }) : t('sync.title') }),
     h('div', {}, [h('b', { text: t('sync.sets', { n: est.sets }) }), t('sync.body', { c: k.club, l: k.league, r: k.rarity, q: est.reqs })]),
     h('div', { class: 'big', text: `~${fmtDur(est.sec, t)}` }),
     h('div', { class: 'note', text: t('sync.avg', { s: avg }) + (measured ? t('sync.measured') : t('sync.first')) + t('sync.keep') }),
@@ -754,7 +761,8 @@ $('show').addEventListener('change', () => { show = $('show').value; try { local
 $('relPct').replaceChildren(...Array.from({ length: 41 }, (_, i) => i - 20).map((p) => h('option', { value: String(p), text: `${p > 0 ? '+' : ''}${p}%` })));
 const sendRelist = () => send({ type: 'setRelist', value: { base: $('relBase').value, pct: Number($('relPct').value), dur: Number($('relDur').value) } });
 for (const id of ['relBase', 'relPct', 'relDur']) $(id).addEventListener('change', sendRelist);
-$('syncAll').addEventListener('click', openSyncConfirm);
+$('syncAll').addEventListener('click', () => openSyncConfirm(false));
+$('syncTab').addEventListener('click', () => openSyncConfirm(true));
 $('diag').addEventListener('click', openDiag);
 $('buys').addEventListener('click', openBuys);
 $('stop').addEventListener('click', () => send({ type: 'stop' }));
