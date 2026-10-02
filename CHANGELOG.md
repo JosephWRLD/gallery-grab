@@ -5,6 +5,12 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [2.2.5] / [1.5.6] — 2026-10-02
+
+### Eklendi
+- **Sadece bu ligi eşitle:** "Tümünü eşitle"nin yanında açık sekmedeki (lig / nadirlik / ligler) setleri eşitleyen
+  düğme (ör. *Sadece Premier League*). Aynı onay penceresi: set sayısı, süre tahmini, son 6 saatte eşitlenenleri atla.
+
 ## [2.2.4] / [1.5.5] — 2026-10-02
 
 ### Değişti

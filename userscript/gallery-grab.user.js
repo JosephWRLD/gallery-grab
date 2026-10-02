@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gallery Grab
 // @namespace    https://github.com/JosephWRLD/gallery-grab
-// @version      2.2.4
+// @version      2.2.5
 // @description  FC Web App: FUT Galeri setleri, notlar, fut.gg çözümleri, token planlayıcı ve eksik kartları alma; oyuncu listesinden en ucuz kart alma
 // @author       JosephWRLD — Discord: yusuflnx
 // @license      PolyForm-Noncommercial-1.0.0 (ticari kullanım/satış yasak)
@@ -735,6 +735,9 @@
     'btn.planner.title': 'Hedef token ya da bütçeye göre en ucuz set planı',
     'btn.syncAll': 'Tümünü eşitle',
     'btn.syncAll.title': "Tüm kulüp, lig ve nadirlik setlerini EA'dan eşitler",
+    'btn.syncTab': 'Sadece {name}',
+    'btn.syncTab.title': "Yalnız açık sekmedeki ({name}) setleri EA'dan eşitler",
+    'sync.titleTab': '{name} setleri eşitlensin mi?',
     'btn.catRefresh': 'Kataloğu yenile',
     'btn.diag': 'Teşhis',
     'btn.buys': 'Son alımlar',
@@ -1063,6 +1066,9 @@
     'btn.planner.title': 'Cheapest set plan for a token target or budget',
     'btn.syncAll': 'Sync all',
     'btn.syncAll.title': 'Syncs every club, league and rarity set from EA',
+    'btn.syncTab': 'Only {name}',
+    'btn.syncTab.title': 'Syncs only the sets in the open tab ({name}) from EA',
+    'sync.titleTab': 'Sync {name} sets?',
     'btn.catRefresh': 'Refresh catalog',
     'btn.diag': 'Diagnose',
     'btn.buys': 'Recent buys',
@@ -2865,7 +2871,8 @@
         h('div', { class: 'tabs' }, gal.cat.categories.map((c) => h('button', { class: c.id === gal.tab ? 'on' : '', text: c.name, onclick: () => { galSet('tab', c.id, 'gTab'); render(); } }))),
         h('button', { class: gal.sel.on ? 'dan' : 'b', text: L('sel.mode'), title: L('sel.mode.title'), onclick: () => { gal.sel.on = !gal.sel.on; gal.selConfirm = false; saveSel(); render(); } }),
         taskBtn({ class: 'b', text: L('btn.planner'), title: L('btn.planner.title'), onclick: () => { gal.modal = 'planner'; gal.pl.confirm = false; runPlanner(); render(); } }),
-        taskBtn({ class: 'b', text: L('btn.syncAll'), title: L('btn.syncAll.title'), onclick: () => { gal.modal = 'sync'; render(); } }),
+        taskBtn({ class: 'b', text: L('btn.syncAll'), title: L('btn.syncAll.title'), onclick: () => { gal.syncTab = false; gal.modal = 'sync'; render(); } }),
+        taskBtn({ class: 'g', text: L('btn.syncTab', { name: tabName().split(' / ')[0] }), title: L('btn.syncTab.title', { name: tabName() }), onclick: () => { gal.syncTab = true; gal.modal = 'sync'; render(); } }),
       ]),
       h('div', { class: 'sub' }, [
         h('span', {}, [L('tab.info', { synced: synced.length, all }), h('b', { text: String(earned) }), L('tab.max', { max: gal.cat.sets.filter((x) => x.cat === gal.tab).reduce((a, x) => a + x.maxTokens, 0) })]),
@@ -3114,13 +3121,14 @@
       h('div', { class: 'row end' }, [h('button', { class: 'g', text: L('close'), onclick: close })]),
     ])]);
   }
+  const tabName = () => gal.cat.categories.find((c) => c.id === gal.tab)?.name || '';
   function syncModal() {
-    const all = gal.cat.sets.filter((s) => !s.filter?.unsupported);
+    const all = gal.cat.sets.filter((s) => !s.filter?.unsupported && (!gal.syncTab || s.cat === gal.tab));
     const sets = gal.skipRecent ? all.filter((s) => !(gal.summary[s.id]?.at > Date.now() - RECENT)) : all;
     const est = syncEstimate(sets, gal.summary, gal.stats.secPerReq);
     const close = () => { gal.modal = null; render(); };
     return h('div', { class: 'md', onclick: (e) => { if (e.target === e.currentTarget) close(); } }, [h('div', { class: 'box' }, [
-      h('h3', { text: L('sync.title') }),
+      h('h3', { text: gal.syncTab ? L('sync.titleTab', { name: tabName() }) : L('sync.title') }),
       h('div', {}, [h('b', { text: L('sync.sets', { n: est.sets }) }), L('sync.body', { c: est.kinds.club, l: est.kinds.league, r: est.kinds.rarity, q: est.reqs })]),
       h('div', { class: 'big', text: `~${fmtDur(est.sec, L)}` }),
       h('div', { class: 'mut', text: L('sync.avg', { s: (est.sec / Math.max(1, est.sets)).toFixed(1).replace('.', LANG === 'en' ? '.' : ',') }) + (gal.stats.secPerReq ? L('sync.measured') : L('sync.first')) + L('sync.keep') }),
