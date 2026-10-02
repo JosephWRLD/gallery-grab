@@ -20,6 +20,7 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 
 const PROBE_MAX = 5;   // en ucuzu bulmak için en fazla arama sayısı
 const PAGE_MAX = 3;    // tam sürüm aranırken aynı fiyat aralığında bakılan en fazla sayfa
+const PAGE_FULL = 20;  // num=21 istenir; 20+ ilan = sayfa dolu (EA en çok 20 döndürse de güvenli taraf)
 const RETRY_MAX = 3;   // ilan başkası tarafından alınırsa yeniden deneme
 const DEFAULT_RUN = { running: false, spent: 0, coins: null, text: '', level: 'idle', ts: 0 };
 const TP_MAX = 100;    // transfer listesi kapasitesi
@@ -151,26 +152,43 @@ const defOf = (a) => Number(a.itemData?.resourceId ?? a.itemData?.definitionId ?
 // Bulunan en ucuzdan bir basamak aşağısı (maxb) ile tekrar aranır; sonuç gelmezse o fiyat en ucuzdur.
 // trail verilirse: trail.lo = ilan çıkmayan son üst sınır (ör. 800 bulundu → 750'de yok);
 // trail.sure = "daha ucuzu yok" kesinleşti (false: sayfalar başka sürümlerle doluydu ya da arama hakkı bitti).
-// EA sonucu fiyata değil bitiş süresine göre sıralar ve maskedDefId oyuncunun tüm sürümlerini getirir: sayfa başka
-// sürümlerle doluysa aranan sürüm sonraki sayfalarda olabilir — boş süzülmüş sayfa "ilan yok" demek değildir.
-async function findCheapest(baseId, exactDef = null, range = null, trail = null) {
+// EA sonucu fiyata değil bitiş süresine göre sıralar ve maskedDefId oyuncunun tüm sürümlerini getirir. Bu yüzden özel
+// sürümde (rare > 1) arama nadirliğe daraltılır (rarityIds); EA filtreyi uygulamıyorsa (başka nadirlik gelirse ya da
+// 400) rarityOk=false olur ve sayfalı yönteme dönülür: sayfa başka sürümlerle doluysa aranan sürüm sonraki sayfalarda
+// olabilir — boş süzülmüş sayfa "ilan yok" demek değildir. 20'den az ilanlı sayfa = aralıktaki tüm ilanlar görüldü.
+let rarityOk = null;   // null: denenmedi, true: EA rarityIds'i uyguluyor, false: uygulamıyor
+const rareOf = (a) => (a.itemData?.rareflag != null ? Number(a.itemData.rareflag) : null);
+async function findCheapest(baseId, exactDef = null, range = null, trail = null, rare = 0) {
+  const byRare = rare > 1 && exactDef && rarityOk !== false;
   let best = null;
   let hi = range?.maxb || 0;
+  const lo = byRare ? 0 : range?.minb || 0;   // nadirliğe daralınca alt sınır gereksiz (fiyatı çöken kart da bulunur)
   let sure = false;
   probe: for (let i = 0; i < PROBE_MAX; i++) {
     let list = [];
-    for (let pg = 0; pg < PAGE_MAX; pg++) {
+    let raw = [];
+    for (let pg = 0; pg < (byRare ? 1 : PAGE_MAX); pg++) {
       if (pg) await sleep(rnd(400, 900));
-      const res = await api.search({ maskedDefId: baseId, num: 21, start: pg * 20, ...(hi > 0 ? { maxb: hi } : {}), ...(range?.minb ? { minb: range.minb } : {}) });
-      const raw = res?.auctionInfo || [];
+      let res;
+      try {
+        res = await api.search({ maskedDefId: baseId, num: 21, start: pg * 20, ...(hi > 0 ? { maxb: hi } : {}), ...(lo ? { minb: lo } : {}), ...(byRare ? { rare } : {}) });
+      } catch (e) {
+        if (byRare && e instanceof ApiError && e.status === 400) { rarityOk = false; return findCheapest(baseId, exactDef, range, trail, 0); }
+        throw e;
+      }
+      raw = res?.auctionInfo || [];
+      if (byRare && raw.some((a) => rareOf(a) != null && rareOf(a) !== rare)) { rarityOk = false; return findCheapest(baseId, exactDef, range, trail, 0); }
+      if (byRare && raw.length) rarityOk = true;
       list = activeBins(res).filter((a) => !exactDef || defOf(a) === exactDef);
       if (list.length) break;
-      if (raw.length < 21) { if (best && trail) trail.lo = hi; sure = true; break probe; }   // sayfalar bitti: yok
+      if (raw.length < PAGE_FULL) { if (best && trail) trail.lo = hi; sure = true; break probe; }   // sayfalar bitti: yok
     }
-    if (!list.length) break;   // PAGE_MAX sayfa başka sürümlerle dolu: emin değiliz
+    if (!list.length) break;   // sayfalar başka sürümlerle dolu: emin değiliz
     const cand = list.reduce((m, a) => (a.buyNowPrice < m.buyNowPrice ? a : m));
     if (!best || cand.buyNowPrice < best.buyNowPrice) best = cand;
-    if (best.buyNowPrice <= 200 || (range?.minb && best.buyNowPrice <= range.minb)) { sure = true; break; }
+    // Eksik sayfa: bu üst sınırın altındaki tüm ilanlar görüldü → en ucuz kesin, aşağıya tekrar arama gereksiz
+    if (raw.length < PAGE_FULL) { if (trail) trail.lo = prevPrice(best.buyNowPrice); sure = true; break; }
+    if (best.buyNowPrice <= 200 || (lo && best.buyNowPrice <= lo)) { sure = true; break; }
     hi = prevPrice(best.buyNowPrice);
     await sleep(rnd(400, 900));
   }
@@ -564,11 +582,11 @@ async function buyCards(my, set, targets, label = '', ctx = {}) {
       const noted = notes.length;
       for (let attempt = 1; attempt <= RETRY_MAX && !done; attempt++) {
         const tr = {};
-        const a = await findCheapest(baseOf(t.def), t.def, t.range, tr);
+        const a = await findCheapest(baseOf(t.def), t.def, t.range, tr, t.rare);
         if (!a) {
           // Sınırın altında ilan yok: gerçek en ucuz fiyatı bul — rapora yazılır ve canlı fiyat olarak saklanır
           // (bir sonraki denemede sınır bu fiyatın %25 fazlası olur)
-          const real = t.range?.maxb ? await findCheapest(baseOf(t.def), t.def, t.range.minb ? { minb: t.range.minb } : null) : null;
+          const real = t.range?.maxb ? await findCheapest(baseOf(t.def), t.def, t.range.minb ? { minb: t.range.minb } : null, null, t.rare) : null;
           await savePrice(t.def, real ? real.buyNowPrice : 0);
           notes.push(real ? T('bg.overCap', { name: t.name, p: fmt(real.buyNowPrice), c: fmt(t.range.maxb) }) : T('bg.noListing', { name: t.name }));
           break;
@@ -589,7 +607,9 @@ async function buyCards(my, set, targets, label = '', ctx = {}) {
           const it = r?.auctionInfo?.[0]?.itemData || a.itemData || {};
           const cur = await load();
           const { galleryBuySpent: sp = 0 } = await chrome.storage.local.get('galleryBuySpent');
-          await chrome.storage.local.set({ galleryBuySpent: sp + price });
+          const { galleryBuys = [] } = await chrome.storage.local.get('galleryBuys');
+          galleryBuys.push({ n: t.name, d: t.def, p: price, g: t.gg || 0, s: set.name, at: Date.now() });
+          await chrome.storage.local.set({ galleryBuySpent: sp + price, galleryBuys: galleryBuys.slice(-200) });
           await patchRun({ coins: parseCoins(r) ?? (cur.run.coins != null ? cur.run.coins - price : null) });
           bought++;
           done = true;
@@ -646,7 +666,7 @@ async function priceFresh(my, set, grade, defs, label) {
     await status(label + T('bg.live', { name: c.name || '#' + c.def, i: i + 1, n: todo.length }), 'ok', my);
     try {
       const tr = {};
-      const a = await findCheapest(baseOf(c.def), c.def, c.rare > 1 && c.price >= 1000 ? { minb: Math.floor(c.price * 0.5) } : null, tr);
+      const a = await findCheapest(baseOf(c.def), c.def, c.rare > 1 && c.price >= 1000 ? { minb: Math.floor(c.price * 0.5) } : null, tr, c.rare);
       if (!a || !suspiciousPrice(a.buyNowPrice, c.price, tr.sure)) await savePrice(c.def, a ? a.buyNowPrice : 0);
     } catch (err) {
       const why = stopReason(err);
@@ -741,7 +761,7 @@ async function priceTier(my, set, grade, defs) {
     await status(T('bg.live', { name, i: i + 1, n: todo.length }), 'ok', my);
     try {
       const tr = {};
-      const a = await findCheapest(baseOf(c.def), c.def, c.rare > 1 && c.price >= 1000 ? { minb: Math.floor(c.price * 0.5) } : null, tr);
+      const a = await findCheapest(baseOf(c.def), c.def, c.rare > 1 && c.price >= 1000 ? { minb: Math.floor(c.price * 0.5) } : null, tr, c.rare);
       const p = a ? a.buyNowPrice : 0;
       if (a && suspiciousPrice(p, c.price, tr.sure)) { changes.push(T('bg.overRef', { name, p: fmt(p), f: fmt(c.price) })); await sleep(rnd(700, 1500)); continue; }
       if (a && tr.lo) trails.push(T('bg.trail', { name, p: fmt(p), lo: fmt(tr.lo) }));

@@ -2,7 +2,7 @@ import { loadCatalog } from './lib/catalog.js';
 import {
   summarise, applyFloors, gradeFor, cheapestFill, counted as countedOf, GRADES, baseOf,
   syncEstimate, fmtDur, planFromTier, defaultTier, pickGrade, pickBatch, bestNext, tierOptions, planTokens, HALL_OF_FUT,
-  sortOptions, showOptions, sortFilterSets, tokenLabel, tokenRows, overview, reachableScore, nextMilestone,
+  sortOptions, showOptions, sortFilterSets, tokenLabel, tokenRows, overview, reachableScore, nextMilestone, OVER_REF,
 } from './lib/gallery.js';
 import { makeT, detectLang, localeOf, LANGS, FLAGS } from './lib/i18n.js';
 import { imgUrls } from './lib/img.js';
@@ -355,6 +355,28 @@ function openDiag() {
     out,
     h('div', { class: 'row' }, [h('button', { class: 'g', text: t('close'), onclick: closeModal }), deep, all, copy, run]),
   );
+  $('mdBox').className = 'box wide';
+  $('md').hidden = false;
+}
+// ---------------------------------------------------------------- son alımlar
+async function openBuys() {
+  const { galleryBuys = [] } = await chrome.storage.local.get('galleryBuys');
+  const td = (text, st = '') => h('td', { text, style: 'padding:3px 8px;' + st });
+  const rows = galleryBuys.slice().reverse().map((b) => {
+    const over = b.g > 0 && b.p > b.g * OVER_REF;
+    const pct = b.g > 0 ? ` (${b.p >= b.g ? '+' : ''}${Math.round((b.p / b.g - 1) * 100)}%)` : '';
+    return h('tr', { style: over ? 'color:#f5b942' : '' }, [
+      td(new Date(b.at).toLocaleString(loc, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })),
+      td(b.s || ''), td(b.n || '#' + b.d), td(fmt(b.p) + pct, 'text-align:right'), td(b.g ? fmt(b.g) : '—', 'text-align:right'),
+    ]);
+  });
+  const head = h('tr', {}, ['buys.when', 'buys.set', 'buys.card', 'buys.paid', 'buys.gg'].map((k) => h('th', { text: t(k), style: 'padding:3px 8px;text-align:left' })));
+  $('mdBox').replaceChildren(...[
+    h('h3', { text: t('buys.title') }),
+    rows.length ? h('div', { class: 'note', text: t('buys.note', { x: Math.round((OVER_REF - 1) * 100) }) }) : h('div', { class: 'note', text: t('buys.empty') }),
+    rows.length ? h('div', { style: 'max-height:60vh;overflow:auto;margin-top:8px' }, [h('table', { style: 'border-collapse:collapse;width:100%;font-size:12px' }, [head, ...rows])]) : null,
+    h('div', { class: 'row' }, [h('button', { class: 'g', text: t('close'), onclick: closeModal })]),
+  ].filter(Boolean));
   $('mdBox').className = 'box wide';
   $('md').hidden = false;
 }
@@ -734,6 +756,7 @@ const sendRelist = () => send({ type: 'setRelist', value: { base: $('relBase').v
 for (const id of ['relBase', 'relPct', 'relDur']) $(id).addEventListener('change', sendRelist);
 $('syncAll').addEventListener('click', openSyncConfirm);
 $('diag').addEventListener('click', openDiag);
+$('buys').addEventListener('click', openBuys);
 $('stop').addEventListener('click', () => send({ type: 'stop' }));
 $('resetSpent').addEventListener('click', () => send({ type: 'resetGallerySpent' }));
 $('refreshCoins').addEventListener('click', async () => {
