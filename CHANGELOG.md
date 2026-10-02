@@ -5,6 +5,17 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [2.2.3] / [1.5.4] — 2026-10-02
+
+### Düzeltildi
+- **Özel kartların fazla fiyattan alınması** (ör. ~24.000'lik özel Veerman 46.000'e alındı): EA pazar araması oyuncunun
+  tüm sürümlerini bitiş süresine göre getirir; sayfa başka sürümlerle doluysa aranan sürümün ucuz ilanı görünmüyordu ve
+  arama "daha ucuzu yok" diye erken bitiyordu. Artık aynı fiyat aralığında 3 sayfaya kadar bakılır; sayfalar bitmeden
+  sonuç kesinleşmezse bu durum işaretlenir.
+- Fiyat fut.gg'nin 1,4 katından fazlaysa ve daha ucuzunun olmadığı kesinleşmediyse kart **alınmaz** (not düşülür) ve
+  canlı fiyat olarak saklanmaz. Fiyat gerçekten yükselmişse (arama kesinleştiyse) alım yine yapılır.
+- Canlı fiyat bakılmamış kartlarda sınır fut.gg × 2 yerine **fut.gg × 1,4** (en az fut.gg + 2.000).
+
 ## [1.5.3] — 2026-10-01
 
 ### Eklendi
