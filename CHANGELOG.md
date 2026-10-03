@@ -5,6 +5,54 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [2.3.0] / [1.6.0] — 2026-10-04
+
+### Eklendi
+- **Kendi puan motoru (bonus etiketleri):** set puanı artık taban puan + oyunun 21 bonus etiketi (Aynı/Farklı
+  Ülke-Kulüp-Lig, Bronz/Gümüş/Altın, Holografik, TOTW, Çoklu, Orta Saha Kontrolü…) ile hesaplanır. Yalnız en
+  yüksek 10 etiket sayılır. Kurallar fut.gg'den katalogla gelir; motor fut.gg'nin önerdiği dizilimlerin taban ve
+  bonus puanlarını birebir veriyor (test edildi). Detayda "taban + bonus" dökümü ve etiket listesi.
+- Sayılan kartlar toplam puanı (bonus dahil) en yüksek olacak şekilde seçilir.
+- **İki çözüm: fut.gg + Gallery Grab.** Set detayında "Çözüm: fut.gg | Gallery Grab" seçici (varsayılan fut.gg).
+  Gallery Grab çözücüsü sendeki kartları bedava sayar, bonus etiketlerini hesaba katar ve derecenin eşiğine ulaşan
+  en ucuz tam dizilimi bulur ("Sendeki 14 kart + 1 kart alırsan → D"). Aday kartlar: fut.gg sayfasındaki kartlar,
+  sendekiler ve canlı fiyatı bakılmış kartlar. Katalogdaki 326 fut.gg kademesinin hiçbirinde fut.gg'den pahalı
+  değil, 48'inde daha ucuz (aynı fiyatlarla); sendeki kartlar sayılınca çoğu sette çok daha ucuz. fut.gg bir derece
+  için çözüm vermiyorsa Gallery Grab çözümü gösterilir. Ucuz olan "… daha ucuz" diye işaretlenir.
+- **Plan kilidi:** "Bu çözümü al" ekranda onaylanan kartları alır; alım anında çözüm değişmişse (fiyat/kulüp) almaz,
+  detayı yenilemeni ister.
+- Set eksikse detayda uyarı: oyunda notlandırmak için tüm yuvalar dolmalı.
+- **Eşitleme animasyonu:** eşitleme sırasında üstte sabit bir ilerleme şeridi (sayaç, o anki set ve sayfa, kalan
+  süre, her set için bir nokta; noktaya tıklayınca set açılır). Izgarada sıradaki setler soluk, eşitlenen set parlar
+  ve kendi ilerleme çubuğunu gösterir; biten set yeşil parlayıp puanı ve kart sayısı sayarak güncellenir, başarısız
+  set sallanır. "İzle" açıkken ızgara eşitlenen sete kendiliğinden kayar (gerekirse sekme değişir).
+- **Alım animasyonu:** alım sırasında üstte harcanan coin sayacı ve alınan kartların çipleri (aranıyor / alındı /
+  atlandı / başarısız); çoklu alımda set başına noktalar ve "İzle". Set detayında kartlar alındıkça işaretlenir.
+- **Atlanan kartlara dönüş:** başkası önce aldığı, ilan bulunamadığı ya da ağ hatası olan kartlara, tüm kartlar
+  bitince birkaç saniye bekleyip 2 tura kadar yeniden denenir. Fiyat sınırına ya da şüpheli fiyata takılanlar
+  denenmez.
+- **Hesaba özel veri:** EA hesabı değişince elle seçilen dereceler, notlandırılacaklar, özet, harcama ve son
+  alımlar o hesaba ait ayrı kayıtta tutulur; eski hesaba dönünce geri gelir. Fiyatlar ve ayarlar ortak.
+  Yeni "Dereceleri sıfırla" düğmesi (iki tık).
+
+### Değişti
+- **Derece düşmez:** alım bittiğinde, alınan kartlar toplanmış sayılarak beklenen puan setin en iyi puanı olarak
+  saklanır. Kartlar sonra satılsa da (oyunda galeride kalırlar ama Web App yalnız kulüpteki kartları gösterir)
+  galeride derece düşmez. "Oyundaki derece" notu da buna göre düzeltildi. Daha önce bonus sayılmadığı
+  ve satılan kartlar düştüğü için oyunda B olan set galeride D görünebiliyordu.
+- Kayıtlı eşitlemelerin puanları güncellemeden sonra yeni hesapla yeniden hesaplanır (EA'ya istek yok).
+- Katalog: sayfadaki tüm fiyatlı kartlar, kart özellikleri (lig, mevkiler, zayıf ayak, beceri, holografik) ve bonus
+  etiket kuralları; katalog üretimi her gün motoru fut.gg'nin kendi puanlarıyla denetler.
+
+### Düzeltildi
+- Lige tıklayınca üstteki lig çubuğu en sağa kayıyordu; artık yalnız seçilen lig görünmüyorsa kayar.
+- Çok setli lige geçince kaydırma çubuğu çıkıp sayfa ve alt bar sola kayıyordu.
+- "Sadece {lig}" düğmesi uzun lig adlarında genişleyip lig çubuğunu daraltıyordu (artık sabit genişlik).
+
+### Bilinen sınır
+- **İlk Sahip** bonusu (paketten çıkan kartlar, +%150–500) EA'nın galeri verisinde yok; bu kartları olan setlerde
+  oyundaki puan daha yüksek olabilir. "Oyundaki derece" seçimi bunun için duruyor.
+
 ## [2.2.5] / [1.5.6] — 2026-10-02
 
 ### Eklendi

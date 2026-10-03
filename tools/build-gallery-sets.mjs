@@ -6,6 +6,7 @@
 // set sayısı belirgin şekilde düşerse dosya yazılmaz (bozuk katalog yayınlanmasın).
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { setScore, solCard } from '../lib/gallery.js';
 
 const OUT = fileURLToPath(new URL('../data/gallery-sets.json', import.meta.url));
 const BASE = 'https://www.fut.gg/fut-gallery/';
@@ -77,6 +78,36 @@ function parseIndex(html) {
   return { cats, sets: [...sets.values()] };
 }
 
+// Bonus etiketleri (her set sayfasında aynı liste): { id, name, rule: { type, attr, values }, tiers: [[enAz, yüzde]] }
+function parseTags(html) {
+  const i = html.indexOf('tags:$R', html.indexOf('category:$R'));
+  if (i < 0) return null;
+  const seg = html.slice(i, html.indexOf('capturedAt', i)).replace(/\$R\[\d+\]=/g, '');
+  const tags = seg.split('{id:').slice(1).map((p) => {
+    const r = p.match(/target:"(\w+)",type:"(\w+)",attribute:"(\w+)",values:\[([^\]]*)\]/);
+    return {
+      id: +p.split(',')[0], name: str(p.match(/name:"((?:[^"\\]|\\.)*)"/)?.[1] || ''),
+      rule: r ? { type: r[2], attr: r[3], values: [...r[4].matchAll(/"([^"]*)"/g)].map((x) => x[1]) } : null,
+      tiers: [...p.matchAll(/minItems:(\d+),bonus:(\d+)/g)].map((m) => [+m[1], +m[2]]),
+    };
+  }).filter((t) => t.rule && t.tiers.length);
+  return tags.length ? tags : null;
+}
+
+// fut.gg'nin kendi önerdiği dizilimin puanı (öz denetim için): { base, bonus, defs }
+function parseSolution(html) {
+  const i = html.indexOf('solution:$R');
+  if (i < 0) return null;
+  const seg = html.slice(i, html.indexOf('costTiers', i));
+  const base = seg.match(/baseGrade:(\d+)/);
+  const bonus = seg.match(/bonusGrade:(\d+)/);
+  if (!base || !bonus) return null;
+  return { base: +base[1], bonus: +bonus[1], defs: [...seg.matchAll(/\{eaId:(\d+),playerEaId/g)].map((m) => +m[1]) };
+}
+
+// Sayfadaki fiyatlı kartlar (çözümler + önerilen dizilim): [eaId, baseId, overall, rarity, score, price, club, nation]
+const CARD_RE = /\{eaId:(\d+),playerEaId:(\d+),score:(\d+),overall:(\d+),gender:\d,clubEaId:(\d+),nationEaId:(\d+),rarityEaId:(\d+),price:(\d+|null)/g;
+
 // Set sayfası: not başına ödüller + sette sayılan kartların takım/nadirlik dağılımı.
 function parseSetPage(html) {
   const i = html.indexOf('l:$R[14]={set:');
@@ -100,28 +131,55 @@ function parseSetPage(html) {
     clubs.set(+m[2], (clubs.get(+m[2]) || 0) + 1);
     rarities.set(+m[3], (rarities.get(+m[3]) || 0) + 1);
   }
-  return { grades, clubs, rarities, sol: parseTiers(html) };
+  return { grades, clubs, rarities, sol: parseTiers(html), solution: parseSolution(html) };
 }
 
 // fut.gg'nin her not için önerdiği en ucuz çözüm ("costTiers"). Yalnız ulaşılabilir notlar listeleniyor.
-// Kartlar sette bir kez tutulur: [eaId (definitionId), baseId, overall, rarity, score, price]; kademe → idx.
+// Kartlar sette bir kez tutulur: [eaId (definitionId), baseId, overall, rarity, score, price, club, nation]
+// (+ ekleAttrs: league, mevkiler, za, beceri, holo); kademe → idx. Kademede olmayan fiyatlı kartlar da
+// tutulur (kendi çözücümüzün aday havuzu).
 function parseTiers(html) {
   const cards = [];
   const at = new Map();
+  const add = (c) => {
+    const def = +c[1];
+    if (!at.has(def)) { at.set(def, cards.length); cards.push([def, +c[2], +c[4], +c[7], +c[3], num(c[8]), +c[5], +c[6]]); }
+    else if (c[8] !== 'null') cards[at.get(def)][5] = +c[8];
+    return at.get(def);
+  };
   const tiers = [];
   const tRe = /\{grade:"([DCBAS])",threshold:\d+,tokens:(\d+),cost:(\d+),peakPrice:\d+,status:"(\w+)",items:\$R\[\d+\]=\[(.*?)\]\}/g;
   for (const m of html.matchAll(tRe)) {
     if (tiers.some((t) => t.g === m[1])) continue;
-    const idx = [];
-    for (const c of m[5].matchAll(/eaId:(\d+),playerEaId:(\d+),score:(\d+),overall:(\d+),gender:\d,clubEaId:\d+,nationEaId:\d+,rarityEaId:(\d+),price:(\d+)/g)) {
-      const def = +c[1];
-      if (!at.has(def)) { at.set(def, cards.length); cards.push([def, +c[2], +c[4], +c[5], +c[3], +c[6]]); }
-      else cards[at.get(def)][5] = +c[6];
-      idx.push(at.get(def));
-    }
+    const idx = [...m[5].matchAll(CARD_RE)].map(add);
     if (idx.length) tiers.push({ g: m[1], cost: +m[3], tokens: +m[2], status: m[4], idx });
   }
-  return tiers.length ? { cards, tiers } : null;
+  for (const c of html.matchAll(CARD_RE)) add(c);
+  return tiers.length || cards.length ? { cards, tiers } : null;
+}
+
+// ---------------------------------------------------------------- kart özellikleri (bonus etiketleri için)
+// Sayfada olmayanlar (lig, mevkiler, zayıf ayak, beceri, holografik) fut.gg kart API'sinden; önceki katalogda
+// olan kartlar yeniden çekilmez (özellikler sezon içinde değişmez).
+const POS = { 0: 'GK', 2: 'RWB', 3: 'RB', 5: 'CB', 7: 'LB', 8: 'LWB', 10: 'CDM', 12: 'RM', 14: 'CM', 16: 'LM', 18: 'CAM', 21: 'CF', 23: 'RW', 25: 'ST', 27: 'LW' };
+const ATTR_API = 'https://www.fut.gg/api/fut/player-item-definitions/27/';
+const ATTR_MAX = Number(process.env.ATTR_MAX || 6000);   // tek çalıştırmada en çok kart isteği
+
+async function fetchAttrs(def) {
+  for (let i = 1; i <= 2; i++) {
+    try {
+      const r = await fetch(`${ATTR_API}${def}/`, { headers: { 'user-agent': UA, accept: 'application/json' } });
+      if (r.ok) {
+        const d = (await r.json())?.data;
+        if (!d) return null;
+        const pos = [d.position, ...(d.alternativePositionIds || [])].map((p) => POS[p]).filter(Boolean);
+        return [d.leagueEaId ?? null, pos.join('/') || null, d.weakFoot ?? null, d.skillMoves ?? null, d.holographicType ? 1 : 0];
+      }
+      if (r.status === 404) return null;
+    } catch (_) {}
+    await sleep(1500 * i);
+  }
+  return null;
 }
 
 function filterFor(set, catSlug, page) {
@@ -137,6 +195,44 @@ function filterFor(set, catSlug, page) {
   const teams = page ? [...page.clubs].filter(([, n]) => n >= 3).sort((a, b) => b[1] - a[1]).map(([id]) => id) : [];
   if (!teams.length && set.club) teams.push(set.club);
   return teams.length ? { teams } : { unsupported: 'club' };
+}
+
+// Kartlara lig/mevki/ZA/beceri/holo ekler: önceki katalogdan, yoksa fut.gg kart API'sinden (ATTR_MAX'a kadar).
+async function addAttrs(sets, prev) {
+  const known = new Map();
+  for (const s of prev?.sets || []) for (const c of s.sol?.cards || []) if (c.length >= 13) known.set(c[0], c.slice(8, 13));
+  const need = new Set();
+  for (const s of sets) for (const c of s.sol?.cards || []) if (c.length < 13 && !known.has(c[0])) need.add(c[0]);
+  let n = 0;
+  let miss = 0;
+  for (const def of need) {
+    if (n++ >= ATTR_MAX) break;
+    const a = await fetchAttrs(def);
+    if (a) known.set(def, a); else miss++;
+    await sleep(150 + Math.random() * 150);
+  }
+  for (const s of sets) {
+    if (!s.sol?.cards) continue;
+    s.sol = { ...s.sol, cards: s.sol.cards.map((c) => (c.length >= 13 ? c : known.has(c[0]) ? [...c.slice(0, 8), ...known.get(c[0])] : c)) };
+  }
+  console.log(`Kart özellikleri: ${need.size} yeni kart, ${Math.min(n, need.size) - miss} çekildi, ${miss} alınamadı`);
+}
+
+// Öz denetim: fut.gg'nin önerdiği dizilimi kendi motorumuzla puanla; fut.gg'nin taban/bonus değeriyle aynı olmalı.
+function selfCheck(sets, tags, oracle) {
+  let ok = 0;
+  const bad = [];
+  for (const s of sets) {
+    const o = oracle.get(s.id);
+    if (!o) continue;
+    const by = new Map((s.sol?.cards || []).map((c) => [c[0], c]));
+    if (!o.defs.every((d) => by.get(d)?.length >= 13)) continue;   // özellikleri eksik: denetlenemez
+    const r = setScore(o.defs.map((d) => solCard(by.get(d))), tags);
+    if (r.base === o.base && r.bonus === o.bonus) ok++;
+    else bad.push(`${s.name}: taban ${r.base}/${o.base}, bonus ${r.bonus}/${o.bonus}`);
+  }
+  console.log(`Puan motoru öz denetimi: ${ok} set tuttu, ${bad.length} farklı`);
+  for (const b of bad.slice(0, 10)) console.warn('UYARI: puan farkı — ' + b);
 }
 
 async function main() {
@@ -159,6 +255,8 @@ async function main() {
   const out = [];
   let failed = 0;
   let solMissing = 0;   // sayfası okundu ama çözümü ayrıştırılamadı (yapı değişmiş olabilir)
+  let tags = null;
+  const oracle = new Map();   // setId → fut.gg'nin önerdiği dizilimin puanı (öz denetim)
   for (const s of sets) {
     const slug = catSlug.get(s.cat);
     const html = await get(`${BASE}${slug}/${s.slug}/`);
@@ -168,24 +266,31 @@ async function main() {
       failed++;
       if (old) { out.push(old); continue; }
     }
-    if (page && !page.sol) solMissing++;
+    if (page && !page.sol?.tiers.length) solMissing++;
+    if (html && !tags) tags = parseTags(html);
+    if (page?.solution) oracle.set(s.id, page.solution);
     out.push({
       id: s.id, slug: s.slug, cat: slug, name: s.name, required: s.required, gender: gender(s.desc),
       club: s.club, filter: filterFor(s, slug, page),
       grades: s.grades.map((g) => ({ ...g, tokens: page?.grades[g.g]?.tokens || 0, items: page?.grades[g.g]?.items || [] })),
       maxTokens: s.maxTokens, priority: s.priority,
       // sol.at: fiyatların çekildiği an; çözüm okunamazsa önceki (bayat) çözüm tarihiyle birlikte korunur
-      sol: page?.sol ? { at: now, ...page.sol } : old?.sol || null,
+      sol: page?.sol?.tiers.length ? { at: now, ...page.sol } : old?.sol || null,
     });
     await sleep(700 + Math.random() * 800);
   }
   if (failed > sets.length / 4) throw new Error(`${failed} set sayfası okunamadı — dosya yazılmadı`);
   if (solMissing > sets.length / 2) throw new Error(`${solMissing} setin çözümü ayrıştırılamadı — fut.gg sayfa yapısı değişmiş olabilir, dosya yazılmadı`);
 
+  await addAttrs(out, prev);
+  tags = tags || prev?.tags || null;
+  if (tags) selfCheck(out, tags, oracle);
+  else console.warn('UYARI: bonus etiketleri ayrıştırılamadı — eklenti yalnız taban puan gösterir');
+
   const categories = cats.sort((a, b) => a.priority - b.priority).map(({ slug, name }) => ({ id: slug, name }));
-  const body = { categories, sets: out.sort((a, b) => a.cat.localeCompare(b.cat) || a.priority - b.priority) };
+  const body = { categories, tags, sets: out.sort((a, b) => a.cat.localeCompare(b.cat) || a.priority - b.priority) };
   // İçerik değişmediyse dosyaya dokunma (tarih yüzünden boş commit oluşmasın).
-  if (prev && JSON.stringify({ categories: prev.categories, sets: prev.sets }) === JSON.stringify(body)) {
+  if (prev && JSON.stringify({ categories: prev.categories, tags: prev.tags || null, sets: prev.sets }) === JSON.stringify(body)) {
     console.log('Değişiklik yok');
     return;
   }

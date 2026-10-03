@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gallery Grab
 // @namespace    https://github.com/JosephWRLD/gallery-grab
-// @version      2.2.5
+// @version      2.3.0
 // @description  FC Web App: FUT Galeri setleri, notlar, fut.gg çözümleri, token planlayıcı ve eksik kartları alma; oyuncu listesinden en ucuz kart alma
 // @author       JosephWRLD — Discord: yusuflnx
 // @license      PolyForm-Noncommercial-1.0.0 (ticari kullanım/satış yasak)
@@ -42,6 +42,7 @@
   const PAGE_MAX = 3;    // tam sürüm aranırken aynı fiyat aralığında bakılan en fazla sayfa
   const PAGE_FULL = 20;  // num=21 istenir; 20+ ilan = sayfa dolu (EA en çok 20 döndürse de güvenli taraf)
   const RETRY_MAX = 3;   // ilan başkası tarafından alınırsa yeniden deneme
+  const RETRY_ROUNDS = 2;   // tüm kartlar bitince başkası aldığı / ilan bulunamadığı / hata verdiği için atlananlara dönüş turu
   const META_TTL = 7 * 24 * 60 * 60 * 1000;
   const META_V = 3;
   const CONTACT = 'yusuflnx';   // sorun/öneri için Discord kullanıcı adı
@@ -104,7 +105,20 @@
 
   // ---------------------------------------------------------------- oturum
   // Web App'in kendi UT isteklerinden X-UT-SID ve ek başlıkları yakala (eklentideki inject.js ile aynı).
-  const session = { sid: null, headers: {}, baseUrl: null };
+  const session = { sid: null, headers: {}, baseUrl: null, acct: null };
+  // Hangi EA hesabı (galeri verisi hesaba özel saklanır): Web App açılışta usermassinfo ister → userInfo.personaId.
+  // Yedek: Web App'in kullanıcı nesnesi (alan adları sürüme göre değişebilir).
+  let onAcct = null;   // galeri kurulunca bağlanır (acctSwitch)
+  function setAcct(id, name) {
+    if (id == null || id === '' || id === 0 || !/^[0-9A-Za-z_-]{1,32}$/.test(String(id))) return;
+    const a = { id: String(id), name: name ? String(name).slice(0, 40) : null };
+    if (session.acct?.id === a.id && session.acct?.name === a.name) return;
+    session.acct = a;
+    onAcct?.(a);
+  }
+  function readMassInfo() {
+    try { const u = JSON.parse(this.responseText)?.userInfo; if (u) setAcct(u.personaId, u.personaName); } catch (_) {}
+  }
   const IGNORED = new Set(['content-type', 'accept', 'x-http-method-override']);
   const baseFrom = (u) => { const m = String(u).match(/^(https?:\/\/[^/]+\/ut\/game\/[^/?#]+)/); return m ? m[1] : null; };
 
@@ -127,6 +141,7 @@
             else if (!IGNORED.has(lk)) session.headers[k] = v;
           }
           if (/\/ut\/game\/[^?]*\/(transfermarket|tradepile|watchlist)\b/.test(String(c.url))) this.addEventListener('load', readCollected);
+          if (/\/ut\/game\/[^?]*\/usermassinfo\b/.test(String(c.url))) this.addEventListener('load', readMassInfo);
         }
         return xSend.apply(this, a);
       };
@@ -137,6 +152,11 @@
       try {
         const id = liveSid();
         if (id && id !== session.sid) session.sid = id;
+        if (!session.acct) {
+          const u = W.services?.User?.getUser?.();
+          const p = u?.getSelectedPersona?.() || u?.selectedPersona || null;
+          setAcct(p?.id ?? p?.personaId ?? u?.personaId ?? u?.selectedPersonaId ?? null, p?.name ?? p?.personaName ?? u?.personaName ?? null);
+        }
         if (!session.baseUrl) {
           for (const e of performance.getEntriesByType('resource')) { const b = baseFrom(e.name); if (b) session.baseUrl = b; }
         }
@@ -640,6 +660,8 @@
     if (!sidNow()) { status('Oturum yok: Web App\'e giriş yapın', 'error'); return; }
     const my = ++token;
     run.running = true;
+    run.sync = null;   // yalnız eşitleme görevi doldurur (animasyon)
+    run.buy = null;    // yalnız alım görevi doldurur (animasyon)
     status(label, 'ok');
     // Görev beklenmedik hata fırlatırsa "çalışıyor" durumunda takılı kalmasın
     Promise.resolve().then(() => fn(my)).catch((e) => stop(L('bg.taskFail', { e: e?.message || String(e) }), 'error', my));
@@ -660,6 +682,7 @@
     if (my != null && my !== token) return;
     token++;
     run.running = false;
+    run.ts = Date.now();   // eşitleme şeridi bitişten sonra bir süre kalır
     status(text, level);
   }
 
@@ -715,10 +738,10 @@
     'ov.level.max': 'tüm ödüller alındı',
     'ov.level.ph': 'oyundan gir',
     'ov.score': 'Toplam galeri puanı',
-    'ov.score.title': "Eşitlenmiş setlerin puanları toplamı (oyundaki bonus etiketler hariç). Oyundaki Galeri Seviyesi Web App verisinde bulunmadığı için gösterilemiyor.",
+    'ov.score.title': "Eşitlenmiş setlerin puanları toplamı (bonus etiketler dahil; İlk Sahip bonusu EA verisinde yok). Oyundaki Galeri Seviyesi Web App verisinde bulunmadığı için gösterilemiyor.",
     'ov.earned': 'Kazanılan token',
     'ov.reachPts': 'Kazanılabilen galeri puanı',
-    'ov.reachPts.title': "Her setin pazarda ulaşılabilen en yüksek notunun fut.gg çözümü alınırsa set puanlarının toplam artışı (eşitlenmiş setlerde sende olan kartlar ve EA puanları hesaba katılır; bonus etiketler hariç).",
+    'ov.reachPts.title': "Her setin pazarda ulaşılabilen en yüksek notunun fut.gg çözümü alınırsa set puanlarının toplam artışı (eşitlenmiş setlerde sende olan kartlar ve EA puanları hesaba katılır; bonus etiketler dahil).",
     'row.reachPts': 'Alınabilen puan',
     'locale': 'tr-TR',
     'ov.reach': 'Şu an alınabilen token',
@@ -741,6 +764,8 @@
     'btn.catRefresh': 'Kataloğu yenile',
     'btn.diag': 'Teşhis',
     'btn.buys': 'Son alımlar',
+    'btn.resetGraded': 'Dereceleri sıfırla', 'btn.resetGraded.title': 'Bu hesaptaki tüm "Oyundaki derece" kayıtlarını (elle seçilen ve eşitlemelerde görülen en yüksek puan) siler. Yeni hesaba geçtiysen kullan.',
+    'resetGraded.confirm': 'Emin misin? Tıkla', 'resetGraded.done': 'Dereceler sıfırlandı', 'acct.label': 'Hesap: {name}',
     'btn.buys.title': 'Galeriden alınan son kartlar: ödenen fiyat ve fut.gg fiyatı',
     'buys.title': 'Son alımlar',
     'buys.empty': 'Henüz galeriden kart alınmadı.',
@@ -807,7 +832,7 @@
     'row.next': 'Sonraki', 'row.earned': 'Kazanılan', 'row.reach': 'Alınabilen', 'row.max': 'En fazla',
     'row.nextVal': '+{gain} token · ~{tax} vergi',
     'row.ready': '+{gain} token · oyunda notlandır',
-    'ready.tip': "Bu notun fut.gg çözümündeki kartların hepsi sende: oyunda Galeri'den seti notlandırarak tokenı alabilirsin. (Buradaki not bonus etiketleri içermediği için düşük görünebilir.)",
+    'ready.tip': "Bu notun fut.gg çözümündeki kartların hepsi sende: oyunda Galeri'den seti notlandırarak tokenı alabilirsin. (İlk Sahip bonusu EA verisinde olmadığı için oyundaki puan daha yüksek olabilir.)",
     'tokens': '{n} token',
     'grid.emptyFilter': 'Gösterilecek set yok (filtre)',
     'grid.empty': 'Bu sekmede set yok',
@@ -867,7 +892,7 @@
     'st.tax': 'Vergi kaybı (%5)',
     'st.target': 'Puan hedefi',
     'st.sumPts': 'Puan (çözüm / hedef)',
-    'st.sumPts.title': 'Çözüm kartlarının galeri puanları toplamı / notun puan eşiği. Oyunda bonus etiketler (aynı kulüp, ilk sahip vb.) eklenir.',
+    'st.sumPts.title': 'Çözüm kartlarının galeri puanı (taban + bonus etiketler) / notun puan eşiği.',
     'pts': '+{n} puan',
     'pts.tip': 'Galeri puanı: {n} ({src})',
     'bg.trail': '{name}: {p} bulundu · {lo} ve altında ilan yok',
@@ -893,13 +918,31 @@
     'ingame.reset': 'Sıfırla',
     'ingame.reset.title': 'Bu set için hatırlanan en yüksek puanı ve seçtiğin dereceyi siler; derece yeniden kulüpteki kartlardan hesaplanır.',
     'ingame.title': 'Oyunda notlandırdığın dereceyi seç. Kartları sattıktan sonra EA onları toplanmış saymadığı için eklenti dereceyi düşük hesaplar; seçtiğin derece altına inilmez.',
-    'ingame.note': 'Oyundaki derece {g} kabul ediliyor — kulüpteki kartlarla hesaplanan {n} puan (not {lg}). Satılan kartları EA toplanmış saymıyor.',
+    'fx.run': 'Eşitleniyor', 'fx.done': 'Eşitleme bitti', 'fx.stopped': 'Eşitleme durdu',
+    'fx.count': '{k} / {n} set', 'fx.fail': '{n} başarısız', 'fx.left': '~{t} kaldı', 'fx.took': '{d} sürdü',
+    'fx.now': 'Şu an: {name}', 'fx.now.title': 'Setin detayını aç', 'fx.pages': 'sayfa {i}/{n}', 'fx.chip': 'eşitleniyor',
+    'fx.follow': 'İzle', 'fx.follow.title': 'Eşitlenen seti ızgarada otomatik göster (gerekirse sekme değişir)',
+    'fx.buy.run': 'Alınıyor', 'fx.buy.done': 'Alım bitti', 'fx.buy.stopped': 'Alım durdu', 'fx.buy.chip': 'alınıyor',
+    'fx.buy.cards': '{k} / {n} kart', 'fx.buy.spent': 'Harcanan', 'fx.buy.picking': 'derece seçiliyor, fiyatlara bakılıyor…',
+    'fx.buy.skip': 'atlandı', 'fx.buy.again': 'tekrar denenecek', 'fx.buy.fail': 'hata', 'fx.buy.find': 'aranıyor…', 'fx.buy.got': '{n} kart alındı',
+    'ingame.note': 'Oyundaki derece {g} kabul ediliyor — kulüpteki kartlarla hesaplanan {n} puan (not {lg}). Satılan kartlar oyunda galeride kalır ama Web App onları göstermiyor (yalnız kulüpte olanları görüyoruz), o yüzden hesap düşük çıkar.',
     'sol.old': ' (fiyatlar {n} gün eski)',
     'buy.confirm': 'Eminim — {n} kartı al (≈ {c})',
     'buy.plan': 'Bu çözümü al ({n} kart ≈ {c})',
     'sol.note': "Kart listesi fut.gg'nin {g} notu için önerdiği çözüm. Alım pazardaki güncel en ucuz ilandan yapılır; sarı fiyatlar güncel, soluk olanlar fut.gg ({d}).",
     'sol.noListing': ' {n} kartın pazarda ilanı yok.',
-    'sol.bonus': ' Kart puanlarına bonus etiketler dahil değil.',
+    'sol.bonus': ' Puanlara bonus etiketler dahil.',
+    'pts.split': 'taban {b} + bonus {x}',
+    'tags.title': 'Bonus etiketleri',
+    'tags.row': '{n} kart · +%{p}',
+    'tags.off': 'en yüksek 10 etiket dışında, sayılmıyor',
+    'tags.none': 'Bu dizilimde bonus etiketi yok.',
+    'tags.note': 'Oyun en yüksek 10 etiketi sayar. İlk Sahip bonusu (paketten çıkan kartlar) EA verisinde yok; oyundaki puan daha yüksek olabilir.',
+    'tag.3': 'Aynı Ülke', 'tag.17': 'Farklı Ülke', 'tag.8': 'Aynı Kulüp', 'tag.14': 'Farklı Kulüp',
+    'tag.16': 'Aynı Lig', 'tag.6': 'Farklı Lig', 'tag.4': 'Bronz', 'tag.11': 'Gümüş', 'tag.7': 'Altın',
+    'tag.12': 'Holografik', 'tag.19': 'İkonik', 'tag.2': 'Kahraman', 'tag.18': 'TOTW', 'tag.1': 'İlk Sahip',
+    'tag.10': 'Kaleci', 'tag.15': 'Çoklu', 'tag.20': 'Çift Ayak', 'tag.5': 'Becerikli',
+    'tag.21': 'Savunma Duvarı', 'tag.22': 'Orta Saha Kontrolü', 'tag.23': 'Topyekûn Hücum',
     'cb.none': 'Bu set için fut.gg çözümü yok — en ucuz eksik kartlar kullanılıyor.',
     'cb.full': 'Tüm slotlar dolu.',
     'cb.plan': '{free} boş slot · en ucuz {n} kart ≈ ',
@@ -917,6 +960,17 @@
     'noSol': 'Bu set için fut.gg çözümü yok.',
     'hd.line': '{c}/{r} toplandı · puan ',
     'hd.line2': ' · not {g} · kazanılan {e}/{m} token',
+    'hd.incomplete': 'Set eksik: oyunda notlandırmak için {n} kart daha gerekli (tüm yuvalar dolmalı).',
+    'src.label': 'Çözüm:', 'src.futgg': 'fut.gg', 'src.gg': 'Gallery Grab', 'src.none': 'bu derece yok', 'src.cheaper': '{n} daha ucuz',
+    'src.title.futgg': "fut.gg'nin önerdiği kartlar (fut.gg senin kulübünü bilmez; sende olanlar bedava sayılır)",
+    'src.title.gg': 'Gallery Grab çözümü: sendeki kartlar bedava, bonus etiketleri dahil, eşiğe ulaşan en ucuz kart dizilimi',
+    'sol.fell.gg': "fut.gg'de bu derece için çözüm yok — Gallery Grab çözümü gösteriliyor.",
+    'sol.fell.futgg': 'Gallery Grab bu dereceye fiyatı bilinen kartlarla ulaşamadı — fut.gg çözümü gösteriliyor.',
+    'sol.gg.have': 'Sendeki {h} kart ', 'sol.gg.buy': '+ {n} kart alırsan (≈{c} coin) ',
+    'sol.gg.get': '→ {g} notu: {s} / {th} puan (bonus +{b} dahil).',
+    'sol.gg.unsynced': '{n} kartla ≈{c} coin → {g}. Seti eşitlersen sendeki kartlar da hesaba katılır.',
+    'sol.note.gg': "Gallery Grab çözümü: fut.gg sayfasındaki kartlar + sendekiler + canlı fiyatı bakılmış kartlar arasından, bonus etiketleriyle eşiğe ulaşan en ucuz dizilim. Fiyatlar fut.gg ({d}) ve bakılan canlı fiyatlar; alım pazardaki güncel en ucuz ilandan yapılır.",
+    'st.total.gg': 'Dizilimin değeri',
     'hd.next': 'Sonraki not {g}: {n} puan daha',
     'hd.nextPay': ' · token veren ilk not {g}: {n} puan daha',
     'hd.top': 'Set en yüksek notta',
@@ -949,6 +1003,7 @@
     // arka plan durum mesajları
     'bg.noSession': "Oturum yok: EA Web App'i açıp giriş yapın",
     'bg.stopped': 'Durduruldu',
+    'bg.acctNew': 'Yeni hesap: {name} — galeri verisi boş başladı, "Tümünü eşitle" yap', 'bg.acctBack': 'Hesap: {name} — bu hesabın kayıtlı galeri verisi yüklendi',
     'bg.haltTitle': 'Gallery Grab durdu',
     'bg.syncStart': 'Eşitleme başladı',
     'bg.syncing': 'Eşitleniyor: {name} ({i}/{n}) · ~{left} kaldı',
@@ -970,7 +1025,8 @@
     'bg.missingStart': 'Eksikler alınıyor',
     'bg.buyStart': 'Çözüm alınıyor',
     'bg.planStart': 'Plan alınıyor',
-    'bg.noSol': '{name}: {g} için fut.gg çözümü yok',
+    'bg.noSol': '{name}: {g} için çözüm yok',
+    'bg.planChanged': '{name} {g}: çözüm ekrandakinden farklı çıktı (fiyat/kulüp değişti) — detayı yenileyip tekrar dene',
     'bg.allOwned': '{name}: çözümdeki kartların hepsi sende',
     'bg.unsyncedSkip': '{name}: eşitlenmemiş, atlandı',
     'bg.search': 'Aranıyor: {name} ({i}/{n})',
@@ -979,6 +1035,7 @@
     'bg.overCap': '{name}: en ucuz {p} > sınır {c}',
     'bg.overRef': "{name}: {p} fut.gg fiyatının ({f}) çok üstünde, daha ucuzu doğrulanamadı — alınmadı",
     'bg.sniped': '{name}: ilanlar hep başkası tarafından alındı',
+    'bg.retryRound': 'Atlanan {n} karta tekrar bakılıyor ({r}/{m})… ',
     'bg.unsupported': '{name}: bu setin kartları Web App ile doğrulanamıyor — eşitleme ve alım kapalı',
     'bg.tpFull': 'Transfer listesi dolu ({n}/100) — boşaltıp tekrar dene',
     'bg.syncFailN': ' · {n} set eşitlenemedi',
@@ -1046,10 +1103,10 @@
     'ov.level.max': 'all rewards unlocked',
     'ov.level.ph': 'enter from game',
     'ov.score': 'Total gallery score',
-    'ov.score.title': 'Sum of synced set scores (excluding in-game bonus tags). The in-game Gallery Level is not in the Web App data, so it cannot be shown.',
+    'ov.score.title': 'Sum of synced set scores (bonus tags included; the First Owner bonus is not in EA data). The in-game Gallery Level is not in the Web App data, so it cannot be shown.',
     'ov.earned': 'Tokens earned',
     'ov.reachPts': 'Gallery score available',
-    'ov.reachPts.title': "Total increase in set scores if you buy fut.gg's solution for each set's highest grade reachable on the market (synced sets count the cards you own and EA scores; bonus tags excluded).",
+    'ov.reachPts.title': "Total increase in set scores if you buy fut.gg's solution for each set's highest grade reachable on the market (synced sets count the cards you own and EA scores; bonus tags included).",
     'row.reachPts': 'Score available',
     'locale': 'en-GB',
     'ov.reach': 'Tokens available now',
@@ -1072,6 +1129,8 @@
     'btn.catRefresh': 'Refresh catalog',
     'btn.diag': 'Diagnose',
     'btn.buys': 'Recent buys',
+    'btn.resetGraded': 'Reset grades', 'btn.resetGraded.title': 'Deletes all "In-game grade" records on this account (manually chosen and the best score seen while syncing). Use it after switching to a new account.',
+    'resetGraded.confirm': 'Sure? Click', 'resetGraded.done': 'Grades reset', 'acct.label': 'Account: {name}',
     'btn.buys.title': 'Cards recently bought from the gallery: price paid and fut.gg price',
     'buys.title': 'Recent buys',
     'buys.empty': 'No cards bought from the gallery yet.',
@@ -1137,7 +1196,7 @@
     'row.next': 'Next', 'row.earned': 'Earned', 'row.reach': 'Available', 'row.max': 'Max',
     'row.nextVal': '+{gain} tokens · ~{tax} tax',
     'row.ready': '+{gain} tokens · grade in game',
-    'ready.tip': "You own every card in fut.gg's solution for this grade: grade the set in the in-game Gallery to claim the tokens. (The grade here excludes bonus tags, so it may look lower.)",
+    'ready.tip': "You own every card in fut.gg's solution for this grade: grade the set in the in-game Gallery to claim the tokens. (The First Owner bonus is not in EA data, so the in-game score may be higher.)",
     'tokens': '{n} tokens',
     'grid.emptyFilter': 'No sets to show (filter)',
     'grid.empty': 'No sets in this tab',
@@ -1194,7 +1253,7 @@
     'st.tax': 'Lost to tax (5%)',
     'st.target': 'Score target',
     'st.sumPts': 'Score (solution / target)',
-    'st.sumPts.title': "Sum of the solution cards' gallery scores / the grade threshold. In-game bonus tags (same club, first owner, etc.) are added on top.",
+    'st.sumPts.title': "Gallery score of the solution cards (base + bonus tags) / the grade threshold.",
     'pts': '+{n} pts',
     'pts.tip': 'Gallery score: {n} ({src})',
     'bg.trail': '{name}: found {p} · no listings at {lo} or below',
@@ -1220,13 +1279,31 @@
     'ingame.reset': 'Reset',
     'ingame.reset.title': 'Clears the remembered best score and the grade you picked for this set; the grade is recalculated from the cards in your club.',
     'ingame.title': "Pick the grade you reached in-game. Once you sell the cards EA no longer counts them as collected, so the extension under-counts; the grade never drops below what you pick.",
-    'ingame.note': 'In-game grade taken as {g} — cards in your club give {n} pts (grade {lg}). EA does not count sold cards as collected.',
+    'fx.run': 'Syncing', 'fx.done': 'Sync finished', 'fx.stopped': 'Sync stopped',
+    'fx.count': '{k} / {n} sets', 'fx.fail': '{n} failed', 'fx.left': '~{t} left', 'fx.took': 'took {d}',
+    'fx.now': 'Now: {name}', 'fx.now.title': 'Open set details', 'fx.pages': 'page {i}/{n}', 'fx.chip': 'syncing',
+    'fx.follow': 'Follow', 'fx.follow.title': 'Auto-show the set being synced in the grid (switches tab if needed)',
+    'fx.buy.run': 'Buying', 'fx.buy.done': 'Buying finished', 'fx.buy.stopped': 'Buying stopped', 'fx.buy.chip': 'buying',
+    'fx.buy.cards': '{k} / {n} cards', 'fx.buy.spent': 'Spent', 'fx.buy.picking': 'picking grade, checking prices…',
+    'fx.buy.skip': 'skipped', 'fx.buy.again': 'will retry', 'fx.buy.fail': 'error', 'fx.buy.find': 'searching…', 'fx.buy.got': '{n} cards bought',
+    'ingame.note': 'In-game grade taken as {g} — cards in your club give {n} pts (grade {lg}). Sold cards stay in your in-game gallery, but the Web App no longer shows them (we only see cards in your club), so the calculation comes out lower.',
     'sol.old': ' (prices {n} days old)',
     'buy.confirm': 'Confirm — buy {n} cards (≈ {c})',
     'buy.plan': 'Buy this solution ({n} cards ≈ {c})',
     'sol.note': "Card list is fut.gg's suggested solution for grade {g}. Purchases use the current cheapest market listing; yellow prices are live, faded ones are fut.gg ({d}).",
     'sol.noListing': ' {n} cards have no market listings.',
-    'sol.bonus': ' Card scores exclude bonus tags.',
+    'sol.bonus': ' Scores include bonus tags.',
+    'pts.split': 'base {b} + bonus {x}',
+    'tags.title': 'Bonus tags',
+    'tags.row': '{n} cards · +{p}%',
+    'tags.off': 'outside the top 10 tags, not counted',
+    'tags.none': 'No bonus tags in this lineup.',
+    'tags.note': 'The game counts the top 10 tags. The First Owner bonus (pack-pulled cards) is not in EA data, so the in-game score may be higher.',
+    'tag.3': 'Same Nation', 'tag.17': 'Different Nation', 'tag.8': 'Same Club', 'tag.14': 'Different Club',
+    'tag.16': 'Same League', 'tag.6': 'Different League', 'tag.4': 'Bronze', 'tag.11': 'Silver', 'tag.7': 'Golden',
+    'tag.12': 'Holographic', 'tag.19': 'Iconic', 'tag.2': 'Heroic', 'tag.18': 'TOTW', 'tag.1': 'First Owner',
+    'tag.10': 'Hands Only', 'tag.15': 'Multiples!', 'tag.20': 'Ambidextrous', 'tag.5': 'Skilled',
+    'tag.21': 'Defensive Wall', 'tag.22': 'Midfield Control', 'tag.23': 'All out Attack',
     'cb.none': 'No fut.gg solution for this set — using the cheapest missing cards.',
     'cb.full': 'All slots are filled.',
     'cb.plan': '{free} empty slots · cheapest {n} cards ≈ ',
@@ -1244,6 +1321,17 @@
     'noSol': 'No fut.gg solution for this set.',
     'hd.line': '{c}/{r} collected · score ',
     'hd.line2': ' · grade {g} · earned {e}/{m} tokens',
+    'hd.incomplete': 'Set incomplete: {n} more cards needed to grade it in game (all slots must be filled).',
+    'src.label': 'Solution:', 'src.futgg': 'fut.gg', 'src.gg': 'Gallery Grab', 'src.none': 'not available', 'src.cheaper': '{n} cheaper',
+    'src.title.futgg': "fut.gg's suggested cards (fut.gg doesn't know your club; cards you own count as free)",
+    'src.title.gg': 'Gallery Grab solution: cards you own are free, bonus tags included, the cheapest lineup that reaches the threshold',
+    'sol.fell.gg': 'fut.gg has no solution for this grade — showing the Gallery Grab solution.',
+    'sol.fell.futgg': "Gallery Grab can't reach this grade with priced cards — showing the fut.gg solution.",
+    'sol.gg.have': '{h} cards you own ', 'sol.gg.buy': '+ buy {n} cards (≈{c} coins) ',
+    'sol.gg.get': '→ grade {g}: {s} / {th} pts (incl. +{b} bonus).',
+    'sol.gg.unsynced': '{n} cards for ≈{c} coins → {g}. Sync the set to count the cards you own.',
+    'sol.note.gg': 'Gallery Grab solution: the cheapest lineup (bonus tags included) that reaches the threshold, from the cards on fut.gg, the cards you own and cards with a checked live price. Prices are fut.gg ({d}) plus checked live prices; purchases use the current cheapest listing.',
+    'st.total.gg': 'Lineup value',
     'hd.next': 'Next grade {g}: {n} more points',
     'hd.nextPay': ' · first paying grade {g}: {n} more points',
     'hd.top': 'Set is at the top grade',
@@ -1274,6 +1362,7 @@
     'pl.confirm': 'Confirm — buy {n} sets (≈ {c})',
     'bg.noSession': 'No session: open the EA Web App and log in',
     'bg.stopped': 'Stopped',
+    'bg.acctNew': 'New account: {name} — gallery data started empty, run "Sync all"', 'bg.acctBack': 'Account: {name} — saved gallery data of this account loaded',
     'bg.haltTitle': 'Gallery Grab stopped',
     'bg.syncStart': 'Sync started',
     'bg.syncing': 'Syncing: {name} ({i}/{n}) · ~{left} left',
@@ -1295,7 +1384,8 @@
     'bg.missingStart': 'Buying missing cards',
     'bg.buyStart': 'Buying solution',
     'bg.planStart': 'Buying plan',
-    'bg.noSol': '{name}: no fut.gg solution for {g}',
+    'bg.noSol': '{name}: no solution for {g}',
+    'bg.planChanged': '{name} {g}: the solution differs from the one on screen (prices/club changed) — reopen the details and try again',
     'bg.allOwned': '{name}: you own every card in the solution',
     'bg.unsyncedSkip': '{name}: not synced, skipped',
     'bg.search': 'Searching: {name} ({i}/{n})',
@@ -1304,6 +1394,7 @@
     'bg.overCap': '{name}: cheapest {p} > limit {c}',
     'bg.overRef': '{name}: {p} is far above fut.gg ({f}) and no cheaper listing could be confirmed — skipped',
     'bg.sniped': '{name}: every listing was bought by someone else',
+    'bg.retryRound': 'Retrying {n} skipped cards ({r}/{m})… ',
     'bg.unsupported': "{name}: this set's cards can't be verified in the Web App — syncing and buying are disabled",
     'bg.tpFull': 'Transfer list full ({n}/100) — clear it and try again',
     'bg.syncFailN': ' · {n} sets could not be synced',
@@ -1384,6 +1475,272 @@
     return defs.filter((d) => d.col).sort((a, b) => b.sc - a.sc).slice(0, set.required);
   }
 
+  // ---------------------------------------------------------------- bonus etiketleri
+  // Set puanı = sayılan kartların puan toplamı (taban) + etiket bonusları. Kurallar katalogda (cat.tags, fut.gg'den):
+  // { id, name, rule: { type, attr, values }, tiers: [[enAzKart, yüzde], …] }. Bonus = eşleşen kartların puan
+  // toplamı × yüzde (aşağı yuvarlanır); yalnız en yüksek MAX_TAGS bonus sayılır. fut.gg'nin 125 setlik çözümleriyle
+  // birebir doğrulandı (tests/fixtures/futgg-solutions.json).
+  // Kart özellikleri: { sc, def, r, rare, team, nation, league, pp: [mevkiler], wf, sm (yıldız), holo, fo }
+  const MAX_TAGS = 10;
+
+  function tagValue(c, attr) {
+    switch (attr) {
+      case 'NATION': return c.nation ?? null;
+      case 'CLUB': return c.team ?? null;
+      case 'LEAGUEID': return c.league ?? null;
+      case 'LEVEL': return !c.r ? null : c.r >= 75 ? 'gold' : c.r >= 65 ? 'silver' : 'bronze';
+      case 'RARE': return c.rare == null ? null : String(c.rare);
+      case 'FIRST_OWNED': return c.fo ? '1' : '0';
+      case 'BASE_DEF_ID': return c.def ? baseOf(c.def) : null;
+      case 'HYPER_COSMETIC_TYPE': return c.holo ? '0' : null;
+      case 'POSSIBLE_POSITIONS': return c.pp || (c.pos ? [c.pos] : null);
+      case 'WEAK_FOOT': return c.wf ?? null;
+      case 'SKILL_MOVES': return c.sm ? c.sm - 1 : null;   // kural EA'nın 0 tabanlı değeriyle yazılmış (4 = 5 yıldız)
+    }
+    return undefined;
+  }
+
+  const RULE_VALS = new WeakMap();   // kural → Set(değerler); setScore takas döngüsünde binlerce kez çağrılır
+  function tagMatch(cards, rule) {
+    const v = (c) => tagValue(c, rule.attr);
+    let vals = RULE_VALS.get(rule);
+    if (!vals) RULE_VALS.set(rule, (vals = new Set((rule.values || []).map(String))));
+    switch (rule.type) {
+      case 'MAX_COUNT_ALL_SAME': {   // en kalabalık grup (eşitlikte puanı yüksek olan)
+        const g = new Map();
+        for (const c of cards) { const k = v(c); if (k != null) (g.get(k) || g.set(k, []).get(k)).push(c); }
+        let best = [];
+        let bs = 0;
+        for (const a of g.values()) {
+          const s = a.reduce((t, c) => t + c.sc, 0);
+          if (a.length > best.length || (a.length === best.length && s > bs)) { best = a; bs = s; }
+        }
+        return best;
+      }
+      case 'COUNT_DIFF': {   // her farklı değerden puanı en yüksek kart
+        const g = new Map();
+        for (const c of cards) { const k = v(c); if (k != null && (!g.has(k) || g.get(k).sc < c.sc)) g.set(k, c); }
+        return [...g.values()];
+      }
+      case 'COUNT': return cards.filter((c) => vals.has(String(v(c))));
+      case 'COUNT_ANY': return cards.filter((c) => { const x = v(c); return Array.isArray(x) ? x.some((p) => vals.has(p)) : x != null && vals.has(String(x)); });
+      case 'MIN_COUNT': { const min = Number(rule.values?.[0]); return cards.filter((c) => { const x = v(c); return x != null && x >= min; }); }
+    }
+    return [];
+  }
+
+  // Dönen: { base, bonus, total, tags: [{ id, name, n, pct, bonus, on }] } — on: en yüksek MAX_TAGS içinde mi
+  function setScore(cards, tags = []) {
+    const base = cards.reduce((t, c) => t + (c.sc || 0), 0);
+    const rows = (tags || []).map((tg) => {
+      const m = tagMatch(cards, tg.rule);
+      let pct = 0;
+      for (const [min, p] of tg.tiers) if (m.length >= min) pct = p;   // kademeler artan sırada
+      let ms = 0;
+      if (pct) for (const c of m) ms += c.sc || 0;
+      return { id: tg.id, name: tg.name, n: m.length, pct, bonus: Math.floor((ms * pct) / 100), on: false };
+    });
+    rows.filter((r) => r.bonus > 0).sort((a, b) => b.bonus - a.bonus).slice(0, MAX_TAGS).forEach((r) => { r.on = true; });
+    const bonus = rows.reduce((t, r) => t + (r.on ? r.bonus : 0), 0);
+    return { base, bonus, total: base + bonus, tags: rows };
+  }
+
+  // Takas araması (setScore ile aynı sonuç, ama hızlı): kart × etiket özellikleri bir kez çıkarılır; her etiketin
+  // durumu (eşleşen sayı/toplam, grup sayaçları) tutulur ve bir takas denemesi yalnız çıkan ve giren kartla hesaplanır.
+  // g: 0 = eşleşme kuralı (key 1/0), 1 = en kalabalık grup, 2 = farklı değerler (key = değerin sıra numarası, -1 yok)
+  const GROUP = { MAX_COUNT_ALL_SAME: 1, COUNT_DIFF: 2 };
+  function prepTags(cards, tags) {
+    return tags.map((tg) => {
+      const g = GROUP[tg.rule.type] || 0;
+      const ids = new Map();
+      const key = Int32Array.from(cards, (c) => {
+        if (!g) return tagMatch([c], tg.rule).length ? 1 : 0;
+        const v = tagValue(c, tg.rule.attr);
+        if (v == null) return -1;
+        if (!ids.has(v)) ids.set(v, ids.size);
+        return ids.get(v);
+      });
+      return { g, key, tiers: tg.tiers, nv: ids.size };
+    });
+  }
+  function tierBonus(tiers, n, ms) {
+    let pct = 0;
+    for (const [min, p] of tiers) if (n >= min) pct = p;
+    return Math.floor((ms * pct) / 100);
+  }
+  function topSum(bon, top) {   // en yüksek MAX_TAGS bonusun toplamı
+    top.fill(0);
+    for (let k = 0; k < bon.length; k++) {
+      let x = bon[k];
+      if (x <= top[MAX_TAGS - 1]) continue;
+      for (let j = 0; j < MAX_TAGS; j++) if (x > top[j]) { const t = top[j]; top[j] = x; x = t; }
+    }
+    let r = 0;
+    for (let j = 0; j < MAX_TAGS; j++) r += top[j];
+    return r;
+  }
+  // Dizilim durumu: pick (havuz sıra numaraları), total, trial(o, c) = o çıkıp c girerse toplam, swap(p, c) = uygula
+  function lineupState(T, sc, start) {
+    const K = T.length, P = sc.length;
+    const pick = start.slice();
+    const inPick = new Uint8Array(P);
+    for (const i of pick) inPick[i] = 1;
+    // g=1: sum = grup toplamı, top = en iyi 3 grup; g=2: sum = değerin en yüksek puanı, mx2 = ikinci en yüksek
+    const S = T.map((t) => ({ n: 0, ms: 0, cnt: new Int32Array(t.nv), sum: new Float64Array(t.nv), mx2: new Float64Array(t.nv), top: [] }));
+    const bon = new Float64Array(K), top = new Float64Array(MAX_TAGS);
+    let base = 0;
+    const build = () => {
+      base = 0;
+      for (const i of pick) base += sc[i];
+      for (let k = 0; k < K; k++) {
+        const { g, key } = T[k], st = S[k];
+        st.n = 0; st.ms = 0;
+        if (!g) { for (const i of pick) if (key[i]) { st.n++; st.ms += sc[i]; } continue; }
+        const { cnt, sum, mx2 } = st;
+        cnt.fill(0); sum.fill(0); mx2.fill(0);
+        for (const i of pick) {
+          const v = key[i];
+          if (v < 0) continue;
+          cnt[v]++;
+          if (g === 1) sum[v] += sc[i];
+          else if (sc[i] > sum[v]) { mx2[v] = sum[v]; sum[v] = sc[i]; } else if (sc[i] > mx2[v]) mx2[v] = sc[i];
+        }
+        if (g === 2) { for (let v = 0; v < cnt.length; v++) if (cnt[v]) { st.n++; st.ms += sum[v]; } continue; }
+        const tp = [];
+        for (let v = 0; v < cnt.length; v++) {
+          if (!cnt[v]) continue;
+          let j = tp.length;
+          while (j > 0 && (cnt[v] > cnt[tp[j - 1]] || (cnt[v] === cnt[tp[j - 1]] && sum[v] > sum[tp[j - 1]]))) j--;
+          if (j < 3) { tp.splice(j, 0, v); if (tp.length > 3) tp.pop(); }
+        }
+        st.top = tp;
+      }
+    };
+    const trial = (o, c) => {   // o çıkar, c girer → toplam
+      for (let k = 0; k < K; k++) {
+        const { g, key, tiers } = T[k], st = S[k];
+        let n, ms;
+        if (!g) {
+          n = st.n - key[o] + key[c];
+          ms = st.ms - (key[o] ? sc[o] : 0) + (key[c] ? sc[c] : 0);
+        } else {
+          const { cnt, sum, mx2 } = st, vo = key[o], vc = key[c];
+          if (g === 1) {
+            n = 0; ms = 0;
+            const see = (cn, su) => { if (cn > n || (cn === n && su > ms)) { n = cn; ms = su; } };
+            if (vo >= 0 && vo === vc) see(cnt[vo], sum[vo] - sc[o] + sc[c]);
+            else { if (vo >= 0) see(cnt[vo] - 1, sum[vo] - sc[o]); if (vc >= 0) see(cnt[vc] + 1, sum[vc] + sc[c]); }
+            for (const v of st.top) if (v !== vo && v !== vc) { see(cnt[v], sum[v]); break; }
+          } else {
+            n = st.n; ms = st.ms;
+            const rest = vo < 0 ? 0 : cnt[vo] === 1 ? 0 : sc[o] === sum[vo] ? mx2[vo] : sum[vo];   // o çıkınca değerin en yükseği
+            if (vo >= 0 && vo === vc) ms += Math.max(rest, sc[c]) - sum[vo];
+            else {
+              if (vo >= 0) { if (cnt[vo] === 1) { n--; ms -= sum[vo]; } else ms += rest - sum[vo]; }
+              if (vc >= 0) { if (!cnt[vc]) { n++; ms += sc[c]; } else if (sc[c] > sum[vc]) ms += sc[c] - sum[vc]; }
+            }
+          }
+        }
+        bon[k] = tierBonus(tiers, n, ms);
+      }
+      return base - sc[o] + sc[c] + topSum(bon, top);
+    };
+    build();
+    for (let k = 0; k < K; k++) bon[k] = tierBonus(T[k].tiers, S[k].n, S[k].ms);
+    const st = { pick, inPick, P, total: base + topSum(bon, top), trial };
+    st.swap = (p, c, t = trial(pick[p], c)) => { inPick[pick[p]] = 0; inPick[c] = 1; pick[p] = c; st.total = t; build(); };
+    return st;
+  }
+  function swapSearch(T, sc, start, rounds = 8) {
+    const st = lineupState(T, sc, start);
+    const { pick, inPick, P } = st;
+    for (let round = 0; round < rounds; round++) {
+      let improved = false;
+      for (let p = 0; p < pick.length; p++) {
+        for (let c = 0; c < P; c++) {
+          if (inPick[c]) continue;
+          const t = st.trial(pick[p], c);
+          if (t > st.total) { st.swap(p, c, t); improved = true; }
+        }
+      }
+      if (!improved) break;
+    }
+    return { pick, total: st.total };
+  }
+
+  // Toplanan kartlardan `required` tanesi: toplam (taban + bonus) en yüksek olacak şekilde. Başlangıçlar: puana göre
+  // ilk N ve en kalabalık ülke/kulüp/lig gruplarını öne alan dizilimler; her birinden 1-1 takaslarla yerel arama.
+  // Adaylar: puanı en yüksek N+LINEUP_EXTRA kart + başlangıç gruplarının kartları.
+  const LINEUP_EXTRA = 15;
+  const SEED_GROUPS = 3;   // grup kuralı başına denenecek en kalabalık değer sayısı
+  const MAX_STARTS = 5;    // yerel aramanın başlatılacağı dizilim sayısı
+  function bestLineup(set, cards, tags = []) {
+    const col = cards.filter((d) => d.col).sort((a, b) => b.sc - a.sc);
+    const N = set.required;
+    if (!tags?.length || col.length <= N) { const pick = col.slice(0, N); return { cards: pick, ...setScore(pick, tags) }; }
+    // başlangıç grupları (MAX_COUNT_ALL_SAME kuralları: ülke/kulüp/lig)
+    const seeds = [];
+    for (const tg of tags) {
+      if (tg.rule.type === 'COUNT_DIFF') continue;
+      if (tg.rule.type !== 'MAX_COUNT_ALL_SAME') {   // eşleşen kartlar (bronz, kaleci, TOTW…): en az kademe kadar varsa
+        const m = tagMatch(col, tg.rule);
+        if (m.length >= (tg.tiers[0]?.[0] || 1)) seeds.push(m.slice(0, N));
+        continue;
+      }
+      const g = new Map();
+      for (const c of col) { const v = tagValue(c, tg.rule.attr); if (v != null) (g.get(v) || g.set(v, []).get(v)).push(c); }
+      [...g.values()].filter((x) => x.length > 1).sort((x, y) => y.length - x.length).slice(0, SEED_GROUPS)
+        .forEach((x) => seeds.push(x.slice(0, N)));
+    }
+    const pool = [...new Set([...col.slice(0, N + LINEUP_EXTRA), ...seeds.flat()])];
+    const at = new Map(pool.map((c, i) => [c, i]));
+    // havuzun tamamıyla bile ilk kademeye ulaşamayan etiket hiçbir dizilimde bonus vermez → aramadan çıkar
+    const live = tags.filter((tg) => {
+      const min = tg.tiers[0]?.[0] || 1;
+      if (tg.rule.type === 'MAX_COUNT_ALL_SAME') return tagMatch(pool, tg.rule).length >= min;
+      if (tg.rule.type === 'COUNT_DIFF') return Math.min(N, tagMatch(pool, tg.rule).length) >= min;
+      return tagMatch(pool, tg.rule).length >= min;
+    });
+    const T = prepTags(pool, live);
+    const sc = Float64Array.from(pool, (c) => c.sc || 0);
+    const total = (idx) => swapSearch(T, sc, idx, 0).total;
+    const starts = [pool.slice(0, N).map((c) => at.get(c))];
+    for (const sd of seeds) {
+      const s0 = sd.map((c) => at.get(c));
+      for (let i = 0; s0.length < N && i < pool.length; i++) if (!s0.includes(i)) s0.push(i);
+      starts.push(s0);
+    }
+    // yerel arama yalnız başlangıç puanı en yüksek MAX_STARTS dizilimden (puana göre ilk N her zaman dahil)
+    const seen = new Set();
+    const cand = starts.filter((p) => { const sig = [...p].sort((x, y) => x - y).join(','); return !seen.has(sig) && seen.add(sig); })
+      .map((p, j) => ({ p, t: total(p), first: j === 0 }));
+    const chosen = [cand[0], ...cand.slice(1).sort((x, y) => y.t - x.t).slice(0, MAX_STARTS - 1)];
+    let best = null, bestT = -1;
+    for (const { p } of chosen) {
+      const r = swapSearch(T, sc, p);
+      if (r.total > bestT) { bestT = r.total; best = r.pick; }
+    }
+    const pick = best.map((i) => pool[i]).sort((x, y) => y.sc - x.sc);
+    return { cards: pick, ...setScore(pick, tags) };
+  }
+
+  // EA kartında olmayan özellikler (holografik, mevkiler, ZA/beceri) katalogdaki fut.gg kartından tamamlanır.
+  // set.sol.cards: [def, base, overall, rarity, score, price, club, nation, league, mevkiler, za, beceri, holo]
+  function solCard(t) {
+    return { def: t[0], base: t[1], r: t[2], rare: t[3], sc: t[4], price: t[5], team: t[6] ?? null, nation: t[7] ?? null, league: t[8] ?? null, pp: t[9] ? t[9].split('/') : null, wf: t[10] ?? null, sm: t[11] ?? null, holo: !!t[12] };
+  }
+  function withAttrs(set, defs) {
+    const cards = set.sol?.cards;
+    if (!cards?.length || !defs?.some((d) => d.col)) return defs;
+    const by = new Map(cards.map((t) => [t[0], t]));
+    return defs.map((d) => {
+      const t = by.get(d.def);
+      if (!t) return d;
+      const c = solCard(t);
+      return { ...d, nation: d.nation ?? c.nation, pp: d.pp?.length ? d.pp : c.pp, wf: d.wf ?? c.wf, sm: d.sm ?? c.sm, holo: d.holo || c.holo };
+    });
+  }
+
   function gradeFor(set, score) {
     const ladder = [...(set.grades || [])].sort((a, b) => a.score - b.score);
     let cur = null;
@@ -1401,11 +1758,32 @@
 
   // Oyunda kazanılan derece geri gitmez, ama kartlar satılınca EA isCollected'ı false yapar ve hesap düşer.
   // set.floor = bilinen oyun puanı (applyFloors); score = max(kulüpteki kartlarla hesaplanan, floor), live = hesaplanan.
+  // set.tags: katalogdaki bonus etiketleri (loadCatalog her sete bağlar); yoksa yalnız taban puan.
+  // base/bonus: canlı puanın dökümü, lineup: sayılan kartlar, tags: etiket satırları.
+  const LINEUP_CACHE = new WeakMap();   // defs dizisi → { anahtar → dizilim } (ızgara her çizimde yeniden hesaplamasın)
   function summarise(set, defs) {
-    const top = counted(set, defs);
-    const live = top.reduce((a, d) => a + (d.sc || 0), 0);
+    const key = `${set.id}:${set.required}:${set.tags ? set.tags.length : 0}`;
+    let memo = LINEUP_CACHE.get(defs);
+    if (!memo) LINEUP_CACHE.set(defs, (memo = new Map()));
+    let lu = memo.get(key);
+    if (!lu) memo.set(key, (lu = bestLineup(set, withAttrs(set, defs), set.tags)));
+    const live = lu.total;
     const score = Math.max(live, set.floor || 0);
-    return { collected: top.length, required: set.required, total: defs.length, score, live, ...gradeFor(set, score) };
+    return { collected: lu.cards.length, required: set.required, total: defs.length, score, live, base: lu.base, bonus: lu.bonus, tags: lu.tags, lineup: lu.cards, ...gradeFor(set, score) };
+  }
+
+  // Detaydaki etiket dökümü: eşleşen etiketler, bonusa göre; off = en yüksek MAX_TAGS dışında (sayılmıyor)
+  function tagRows(tags, t = TR_T) {
+    return (tags || []).filter((r) => r.pct > 0).sort((a, b) => b.bonus - a.bonus).map((r) => {
+      const tr = t('tag.' + r.id);
+      return { id: r.id, name: tr === 'tag.' + r.id ? r.name : tr, n: r.n, pct: r.pct, bonus: r.bonus, off: !r.on };
+    });
+  }
+
+  // Katalog yüklenince: etiketleri her sete bağla (summarise set.tags'i kullanır)
+  function attachTags(cat) {
+    for (const s of cat?.sets || []) s.tags = cat.tags || null;
+    return cat;
   }
 
   // graded = galleryGraded[setId] = { best, manual } — best: eşitlemelerde görülen en yüksek puan,
@@ -1483,6 +1861,144 @@
   // set.sol = { cards: [[def, base, overall, rarity, score, price]], tiers: [{ g, cost, tokens, status, idx }] }
   // defs verilirse (eşitlenmiş set) kartlar EA'nın isCollected bilgisiyle ve adlarıyla eşleşir.
   // live = { [def]: coin } — pazardan az önce bakılan fiyat (0 = ilan yok); varsa fut.gg fiyatının yerine geçer.
+  // ---------------------------------------------------------------- Gallery Grab çözücü
+  // fut.gg'nin kademesinden bağımsız: sendeki kartlar (bedava) + fiyatı bilinen kartlar (katalog havuzu ve canlı
+  // fiyatı bakılmış EA kartları) arasından, puanı (taban + bonus) derecenin eşiğine ulaşan en ucuz dizilim.
+  // Arama: sendeki en iyi dizilimden başlayıp puan/fiyat oranıyla eşiğe çıkar, sonra eşiği koruyarak pahalı kartları
+  // ucuzlarıyla değiştirir; fut.gg kademesi ve en yüksek puanlı dizilim de başlangıç olarak denenir, en ucuzu seçilir.
+  // Dönen biçim planFromTier ile aynı (src: 'gg'); ulaşılamıyorsa null.
+  function solCandidates(set, defs = null, live = null) {
+    const own = defs ? withAttrs(set, defs) : [];
+    const byDef = new Map(own.map((d) => [d.def, d]));
+    const out = new Map();
+    const catPrice = new Map((set.sol?.cards || []).map((t) => [t[0], t[5]]));   // sendekilerin piyasa değeri (gösterim)
+    for (const d of own) if (d.col && d.sc > 0) out.set(d.def, { ...d, cost: 0, price: catPrice.get(d.def) ?? null, owned: true, scSrc: 'EA' });
+    const add = (c, price, scSrc) => {
+      if (out.has(c.def) || !(price > 0) || !(c.sc > 0)) return;
+      out.set(c.def, { ...c, price, cost: price, owned: false, scSrc });
+    };
+    for (const t of set.sol?.cards || []) {
+      const c = solCard(t);
+      const d = byDef.get(c.def);
+      const lv = live && c.def in live ? live[c.def] : null;
+      if (lv === 0) continue;   // ilanı yok
+      const sc = d?.sc > 0 ? d.sc : c.sc;
+      add({ ...c, sc, name: d?.name || '', live: lv, base: c.base }, lv > 0 ? lv : c.price, d?.sc > 0 ? 'EA' : 'fut.gg');
+    }
+    for (const d of own) {   // EA'daki diğer kartlar: yalnız canlı fiyatı bilinenler
+      const lv = live && d.def in live ? live[d.def] : null;
+      if (!d.col && d.tradable !== false && lv > 0) add({ ...d, base: d.base ?? baseOf(d.def), live: lv }, lv, 'EA');
+    }
+    return [...out.values()];
+  }
+
+  const SOLVE_CACHE = new WeakMap();   // defs (ya da set.sol) → { anahtar → plan }
+  function solveGrade(set, grade, defs = null, live = null) {
+    const g = set.grades?.find((x) => x.g === grade);
+    if (!g || set.filter?.unsupported) return null;
+    const owner = defs || set.sol || set;
+    const key = `${set.id}:${grade}:${g.score}:${set.grades.map((x) => x.tokens || 0).join(",")}:${set.required}:${set.tags ? set.tags.length : 0}:${live ? Object.keys(live).length + ':' + Object.values(live).reduce((a, x) => a + (x || 0), 0) : ''}`;
+    let memo = SOLVE_CACHE.get(owner);
+    if (!memo) SOLVE_CACHE.set(owner, (memo = new Map()));
+    if (!memo.has(key)) memo.set(key, solveCalc(set, g, defs, live));
+    return memo.get(key);
+  }
+  function solveCalc(set, g, defs, live) {
+    const N = set.required;
+    const target = g.score;
+    const cand = solCandidates(set, defs, live);
+    // Oyunda set ancak tüm yuvalar doluyken notlandırılır → dizilim tam N kart
+    const pool = cand;
+    const P = pool.length;
+    if (P < N) return { unreachable: true, short: N - P, max: 0, grade: g.g, threshold: target };
+    const tags = set.tags || [];
+    const T = prepTags(pool, tags);
+    const sc = Float64Array.from(pool, (c) => c.sc || 0);
+    const cost = Float64Array.from(pool, (c) => c.cost || 0);
+    const costOf = (pick) => pick.reduce((a, i) => a + cost[i], 0);
+    // N'e tamamla: en ucuz (eşitlikte puanı yüksek) kartlarla
+    const cheap = pool.map((c, i) => i).sort((a, b) => cost[a] - cost[b] || sc[b] - sc[a]);
+    const fill = (idx) => { const p = idx.slice(0, N); for (const e of cheap) { if (p.length >= N) break; if (!p.includes(e)) p.push(e); } return p; };
+
+    // başlangıç 1: sendeki en iyi dizilim
+    const own = pool.map((c, i) => (c.owned ? i : -1)).filter((i) => i >= 0);
+    const ownBest = own.length ? bestLineup({ required: N }, own.map((i) => ({ ...pool[i], col: true, _i: i })), tags).cards.map((c) => c._i) : [];
+    const starts = [fill(ownBest)];
+    // başlangıç 2: fut.gg kademesi (kartları havuzdaysa)
+    const at = new Map(pool.map((c, i) => [c.def, i]));
+    const tier = set.sol?.tiers?.find((x) => x.g === g.g);
+    if (tier) {
+      const idx = tier.idx.map((i) => at.get(set.sol.cards[i][0]));
+      if (idx.every((i) => i != null)) starts.push(fill(idx));
+    }
+    // başlangıç 3: en yüksek puanlı dizilim (ulaşılabilirlik sınırı)
+    const maxRun = swapSearch(T, sc, pool.map((c, i) => i).sort((a, b) => sc[b] - sc[a]).slice(0, N));
+    starts.push(maxRun.pick);
+    if (maxRun.total < target) return { unreachable: true, max: maxRun.total, grade: g.g, threshold: target };
+
+    let best = null, bestCost = Infinity;
+    for (const start of starts) {
+      const st = lineupState(T, sc, start);
+      const { pick, inPick } = st;
+      // 1) eşiğe çık: puan artıran takaslardan, eşiği geçirenlerin en ucuzu; yoksa en iyi puan/maliyet oranı
+      for (let step = 0; st.total < target && step < N * 3; step++) {
+        let mv = null, reach = null;
+        for (let p = 0; p < N; p++) {
+          for (let c = 0; c < P; c++) {
+            if (inPick[c]) continue;
+            const t = st.trial(pick[p], c);
+            const ds = t - st.total;
+            if (ds <= 0) continue;
+            const dc = cost[c] - cost[pick[p]];
+            if (t >= target) { if (!reach || dc < reach.dc || (dc === reach.dc && t > reach.t)) reach = { p, c, t, dc }; continue; }
+            const v = dc <= 0 ? 1e12 + ds : ds / dc;
+            if (!mv || v > mv.v) mv = { p, c, t, v };
+          }
+        }
+        const m = reach || mv;
+        if (!m) break;
+        st.swap(m.p, m.c, m.t);
+      }
+      if (st.total < target) continue;
+      // 2) eşiği koruyarak ucuzlat: en çok tasarruf eden takas
+      for (let step = 0; step < N * 4; step++) {
+        let mv = null;
+        for (let p = 0; p < N; p++) {
+          const co = cost[pick[p]];
+          if (!co) continue;
+          for (let c = 0; c < P; c++) {
+            if (inPick[c] || cost[c] >= co) continue;
+            const t = st.trial(pick[p], c);
+            if (t < target) continue;
+            const save = co - cost[c];
+            if (!mv || save > mv.save || (save === mv.save && t > mv.t)) mv = { p, c, t, save };
+          }
+        }
+        if (!mv) break;
+        st.swap(mv.p, mv.c, mv.t);
+      }
+      const c0 = costOf(pick);
+      if (c0 < bestCost || (c0 === bestCost && st.total > best.total)) { bestCost = c0; best = { pick: pick.slice(), total: st.total }; }
+    }
+    if (!best) return { unreachable: true, max: maxRun.total, grade: g.g, threshold: target };
+
+    const lineup = best.pick.map((i) => pool[i]);
+    const pts = setScore(lineup, tags);
+    const cards = lineup.map((c) => ({
+      def: c.def, base: c.base ?? baseOf(c.def), r: c.r, rare: c.rare, score: c.sc, sc: c.sc, scSrc: c.scSrc,
+      price: c.price ?? null, live: c.owned ? null : c.live ?? null, cost: c.cost, name: c.name || '', col: !!c.owned, known: !!c.owned || !!c.name,
+    })).sort((a, b) => b.sc - a.sc);
+    const open = cards.filter((c) => !c.col);
+    const need = open.reduce((a, c) => a + c.cost, 0);
+    return {
+      src: 'gg', grade: g.g, tier: null, cards, cost: need, need, tax: Math.ceil(need * TAX),
+      tokens: set.grades.filter((x) => x.score <= g.score).reduce((a, x) => a + (x.tokens || 0), 0),   // fut.gg kademesi gibi kümülatif
+      threshold: target, synced: !!defs, missing: open.length,
+      sumSc: pts.total, sumBase: pts.base, sumBonus: pts.bonus,
+      priced: open.filter((c) => c.live != null).length, noListing: 0,
+    };
+  }
+
   function planFromTier(set, grade, defs = null, live = null) {
     const tier = set.sol?.tiers?.find((t) => t.g === grade);
     if (!tier) return null;
@@ -1498,11 +2014,12 @@
     const open = cards.filter((c) => !c.col);
     const need = open.reduce((a, c) => a + c.cost, 0);
     const g = set.grades.find((x) => x.g === grade);
+    const pts = setScore(tier.idx.map((i, k) => ({ ...solCard(set.sol.cards[i]), sc: cards[k].sc })), set.tags);
     return {
       grade, tier, cards, cost: tier.cost, need, tax: Math.ceil(need * TAX),
       tokens: tier.tokens, threshold: g?.score ?? null, synced: !!defs,
       missing: open.length,
-      sumSc: cards.reduce((a, c) => a + c.sc, 0),   // çözüm kartlarının toplam puanı (bonus etiketler hariç)
+      sumSc: pts.total, sumBase: pts.base, sumBonus: pts.bonus,   // çözüm kartlarının puanı (taban + bonus etiketler)
       priced: open.filter((c) => c.live != null).length,   // canlı fiyatı bilinen eksik kart
       noListing: open.filter((c) => c.live === 0).length,
     };
@@ -1699,9 +2216,18 @@
 
   // Şu an kazanılabilen galeri puanı: pazarda ulaşılabilen en yüksek notun fut.gg çözümü alınırsa set puanı
   // ne kadar artar. defs varsa (eşitlenmiş) EA puanları + sende olanlar; yoksa fut.gg puanlarıyla sıfırdan.
+  const REACH_CACHE = new WeakMap();   // defs (ya da set.sol) → { anahtar → puan }
   function reachableScore(set, defs = null) {
     const tiers = set.sol?.tiers;
     if (!tiers?.length || set.filter?.unsupported) return null;
+    const owner = defs || set.sol;
+    const key = `${set.id}:${set.required}:${set.floor || 0}:${set.tags ? set.tags.length : 0}`;
+    let memo = REACH_CACHE.get(owner);
+    if (!memo) REACH_CACHE.set(owner, (memo = new Map()));
+    if (!memo.has(key)) memo.set(key, reachCalc(set, defs, tiers));
+    return memo.get(key);
+  }
+  function reachCalc(set, defs, tiers) {
     const top = tiers.reduce((a, x) => (x.tokens >= a.tokens ? x : a));
     const pool = new Map((defs || []).map((d) => [d.def, d]));
     const before = defs ? summarise(set, defs).score : 0;
@@ -2251,6 +2777,7 @@
     selConfirm: false,
   };
   const galSet = (k, v, key) => { gal[k] = v; store.set(key, v); };
+  attachTags(gal.cat);
   // Dil: Galeri ekranındaki TR/EN seçimi (yoksa tarayıcı dili). L(anahtar, {yer}) → metin
   let LANG = store.get('gLang', null) || detectLang();
   let L = makeT(LANG);
@@ -2268,6 +2795,20 @@
       const d = store.get('gdefs:' + s.id, null);
       if (d?.defs) gal.defs.set(s.id, d.defs);
     }
+    // Özetleri kayıtlı kartlardan yeniden hesapla (puan hesabı ya da katalog değişmiş olabilir; EA'ya istek yok)
+    if (!gal.cat) return;
+    applyFloors(gal.cat.sets, gal.graded);
+    let changed = false;
+    for (const s of gal.cat.sets) {
+      const defs = gal.defs.get(s.id);
+      const old = gal.summary[s.id];
+      if (!defs || !old) continue;
+      const x = summarise(s, defs);
+      if (x.score === old.score && x.bonus === old.bonus && x.collected === old.collected) continue;
+      gal.summary[s.id] = { ...old, collected: x.collected, score: x.score, grade: x.grade, earned: x.earned, base: x.base, bonus: x.bonus };
+      changed = true;
+    }
+    if (changed) store.set('gSummary', gal.summary);
   }
   // Oyundaki derece (null = otomatik): kartlar satılınca EA onları toplanmış saymaz, kullanıcı dereceyi sabitler
   function setGraded(id, value, reset = false) {
@@ -2284,6 +2825,41 @@
     }
     render();
   }
+  // ---- hesaba özel galeri verisi: gAcct = { id, name } verisi yüklü hesap. Hesap değişince eskisinin verisi
+  // gAcct:<id> altına kaldırılır, yeninin kaydı geri yüklenir (yoksa boş). Fiyatlar, ayarlar, katalog ortak.
+  const ACCT_KEYS = ['gGraded', 'gToGrade', 'gSummary', 'gSpent', 'gBuys', 'gLevel'];
+  function acctSwitch(a) {
+    const cur = store.get('gAcct', null);
+    if (cur?.id === a.id) { if (a.name && a.name !== cur.name) store.set('gAcct', a); return; }
+    if (!cur) { store.set('gAcct', a); render(); return; }   // ilk tanıma: mevcut veri bu hesabın
+    if (run.running) stop(L('bg.stopped'), 'idle');
+    const keys = [...ACCT_KEYS, ...(gal.cat?.sets || []).map((x) => 'gdefs:' + x.id)];
+    const snap = {};
+    for (const k of keys) { const v = store.get(k, null); if (v != null) snap[k] = v; }
+    store.set('gAcct:' + cur.id, { name: cur.name, at: Date.now(), data: snap });
+    const next = store.get('gAcct:' + a.id, null);
+    for (const k of keys) store.set(k, next?.data?.[k] ?? null);
+    store.set('gAcct:' + a.id, null);
+    store.set('gAcct', { id: a.id, name: a.name || next?.name || null });
+    gal.graded = store.get('gGraded', null) || {};
+    gal.toGrade = store.get('gToGrade', null) || {};
+    gal.summary = store.get('gSummary', null) || {};
+    gal.spent = store.get('gSpent', null) || 0;
+    loadAllDefs();
+    const name = a.name || next?.name || a.id;
+    status(next?.data ? L('bg.acctBack', { name }) : L('bg.acctNew', { name }), next?.data ? 'ok' : 'warn');
+    render();
+  }
+  onAcct = acctSwitch;
+  if (session.acct) setTimeout(() => acctSwitch(session.acct), 0);
+  // Bu hesaptaki tüm "oyundaki derece" kayıtları silinir, özetler kayıtlı eşitlemelerden yeniden hesaplanır
+  function resetGraded() {
+    gal.graded = {};
+    store.set('gGraded', {});
+    loadAllDefs();
+    render();
+  }
+
   function markToGrade(id, on = true) {
     if (on) gal.toGrade[id] = Date.now(); else delete gal.toGrade[id];
     store.set('gToGrade', gal.toGrade);
@@ -2315,6 +2891,7 @@
       if (!Array.isArray(c?.sets) || c.sets.length < 50) throw new Error('geçersiz katalog');
       const changed = c.updated !== gal.cat?.updated;
       galSet('cat', c, 'gCatalog');
+      attachTags(gal.cat);   // depoya yazıldıktan sonra: etiketler her sete kopyalanıp saklanmasın
       galSet('catAt', Date.now(), 'gCatalogAt');
       gal.catErr = null;
       if (changed) loadAllDefs();
@@ -2330,6 +2907,12 @@
   const dt = (ms) => new Date(ms).toLocaleString(LOC, { dateStyle: 'short', timeStyle: 'short' });
 
   // ---------------------------------------------------------------- EA konsept araması
+  const EA_POS = { 0: 'GK', 2: 'RWB', 3: 'RB', 5: 'CB', 7: 'LB', 8: 'LWB', 10: 'CDM', 12: 'RM', 14: 'CM', 16: 'LM', 18: 'CAM', 21: 'CF', 23: 'RW', 25: 'ST', 27: 'LW' };
+  const eaNum = (...v) => { for (const a of v) if (a != null && a !== '' && !Number.isNaN(Number(a))) return Number(a); return null; };
+  const eaPos = (...v) => {
+    const a = v.find((p) => Array.isArray(p) && p.length);
+    return a ? a.map((p) => (typeof p === 'number' || /^\d+$/.test(p) ? EA_POS[p] : String(p))).filter(Boolean) : null;
+  };
   function conceptPage(crit, offset, count = 100) {
     return new Promise((resolve, reject) => {
       try {
@@ -2375,7 +2958,11 @@
           }
           const items = src.map((i, idx) => {
             const x = raw ? raw.m.get(Number(i.definitionId)) || raw.arr?.[idx] || null : null;
+            const sm = eaNum(i.skillMoves, i.skillmoves, x?.skillmoves);
             return {
+              // bonus etiketleri için (EA beceri değeri 0 tabanlı → yıldız)
+              nation: eaNum(i.nationId, i.nation, x?.nation), pp: eaPos(i.possiblePositions, x?.possiblePositions),
+              wf: eaNum(i.weakFootAbilityTypeCode, i.weakFoot, x?.weakfootabilitytypecode), sm: sm == null ? null : sm + 1,
               def: Number(i.definitionId), name: i._staticData?.name || '', r: Number(i.rating) || 0,
               rare: Number(i.rareflag) || 0, team: Number(i.teamId) || null, league: Number(i.leagueId) || null,
               pos: i.preferredPosition || null, col: x ? x.isCollected === true : !!i.isCollected,
@@ -2415,11 +3002,27 @@
     const s = summarise(set, defs);
     gal.summary[set.id] = {
       collected: s.collected, required: s.required, total: s.total, score: s.score, grade: s.grade, earned: s.earned,
-      reqs: reqs ?? gal.summary[set.id]?.reqs ?? null, at: Date.now(),
+      base: s.base, bonus: s.bonus, reqs: reqs ?? gal.summary[set.id]?.reqs ?? null, at: Date.now(),
     };
     store.set('gdefs:' + set.id, { at: Date.now(), defs });
     store.set('gSummary', gal.summary);
     gal.defs.set(set.id, defs);
+  }
+
+  // Alınan kart satışa çıkıp satılınca EA isCollected'ı false yapar, ama oyunda notlandırılan derece düşmez.
+  // Alımdan sonra beklenen puan (alınanlar toplanmış sayılarak, bonus dahil) setin en iyi puanı olarak saklanır.
+  function raiseFloor(set, got) {
+    const defs = gal.defs.get(set.id);
+    if (!defs || !got?.length) return;
+    const ids = new Set(got);
+    const live = summarise({ ...set, floor: 0 }, defs.map((d) => (ids.has(d.def) ? { ...d, col: true } : d))).live;
+    const g = gal.graded[set.id] || {};
+    if (live <= (g.best || 0)) return;
+    gal.graded[set.id] = { ...g, best: live };
+    store.set('gGraded', gal.graded);
+    set.floor = floorScore(set, gal.graded[set.id]);
+    const sum = summarise(set, defs);
+    if (gal.summary[set.id]) { gal.summary[set.id] = { ...gal.summary[set.id], score: sum.score, grade: sum.grade, earned: sum.earned }; store.set('gSummary', gal.summary); }
   }
 
   // ---------------------------------------------------------------- galeri görevleri
@@ -2430,16 +3033,20 @@
     let n = 0;
     let failed = 0;
     let streak = 0;   // art arda başarısız set
+    // galeri ızgarasındaki eşitleme animasyonu için: sıra, o anki set ve istek ilerlemesi
+    const sync = run.sync = { ids: sets.map((x) => x.id), done: [], fail: [], cur: null, req: 0, reqN: 0, t0: started, end: 0, left: 0 };
     for (const [i, set] of sets.entries()) {
       if (my !== token) return;
-      status(L('bg.syncing', { name: set.name, i: i + 1, n: sets.length, left: fmtDur(syncEstimate(sets.slice(i), gal.summary, per).sec, L) }), 'ok', my);
+      const left = syncEstimate(sets.slice(i), gal.summary, per).sec;
+      Object.assign(sync, { cur: set.id, req: 0, reqN: setRequests(set, gal.summary[set.id]), left: Math.round(left) });
+      status(L('bg.syncing', { name: set.name, i: i + 1, n: sets.length, left: fmtDur(left, L) }), 'ok', my);
       let reqs = 0;
       let defs = null;
       let lastErr = null;
       // Web App anlık meşgulse / zaman aşımı: 2 sn sonra bir kez daha dene, olmazsa seti atla
       for (let attempt = 0; attempt < 2 && !defs && my === token; attempt++) {
         try {
-          defs = await fetchSetDefs(set.filter, (ms) => { reqs++; per = per ? per * 0.8 + (ms / 1000) * 0.2 : ms / 1000; });
+          defs = await fetchSetDefs(set.filter, (ms) => { reqs++; sync.req = reqs; per = per ? per * 0.8 + (ms / 1000) * 0.2 : ms / 1000; render(); });
         } catch (err) {
           lastErr = err;
           const why = stopReason(err);
@@ -2453,14 +3060,21 @@
         galSet('stats', { secPerReq: per }, 'gSyncStats');
         n++;
         streak = 0;
+        sync.done = [...sync.done, set.id];
+        sync.cur = null;
+        render();
       } else {
         failed++;
+        sync.fail = [...sync.fail, set.id];
+        sync.cur = null;
+        render();
         const e = lastErr?.message || L('error');
         if (++streak >= 3) { fail(e); return stop(L('bg.syncFail', { name: set.name, e }) + L('bg.syncFailN', { n: failed }), 'error', my); }
         status(L('bg.syncFail', { name: set.name, e }), 'warn', my);
       }
       await sleep(rnd(300, 700));
     }
+    sync.end = Date.now();
     if (my === token) stop(L('bg.syncDone', { n, m: sets.length, d: fmtDur((Date.now() - started) / 1000, L) }) + (failed ? L('bg.syncFailN', { n: failed }) : ''), failed ? 'warn' : 'ok', my);
   }
 
@@ -2587,15 +3201,40 @@
   }
 
   // Dönen: { bought, notes, halt } — halt: 'budget' | 'coins' | 'tpfull' | 'stopped' | 'error'. ctx.tp: transfer listesi sayacı
+  // Galeri ekranındaki alım animasyonu (run.buy): set sırası, o anki set ve kartlarının durumu
+  // kart st: 'q' sırada | 'find' aranıyor | 'ok' alındı (p fiyat) | 'skip' atlandı | 'fail' hata
+  function buyFx(my, ids) {
+    const buy = run.buy = { ids, done: [], fail: [], cur: null, cset: null, cards: [], spent: 0, bought: 0, t0: Date.now(), end: 0 };
+    const patch = (p = {}) => { if (my === token) { Object.assign(buy, p); render(); } };
+    const card = (def, p, extra = {}) => { Object.assign(buy.cards.find((c) => c.def === def) || {}, p); patch(extra); };
+    const close = (id, ok) => patch({ [ok ? 'done' : 'fail']: [...buy[ok ? 'done' : 'fail'], id], cur: null });
+    return { buy, patch, card, close };
+  }
+  const fxCards = (targets, plan = []) => targets.map((t) => ({ def: t.def, name: t.name, base: baseOf(t.def), r: plan.find((c) => c.def === t.def)?.r || 0, rare: t.rare, st: 'q', p: 0 }));
+
+  // Başkası aldığı, ilan olmadığı ya da hata verdiği için atlanan kartlara, hepsi bitince RETRY_ROUNDS tur daha dönülür
+  // (fiyat sınırı / şüpheli fiyat yüzünden atlananlara dönülmez). Notlar yalnız son turda kalanlar için yazılır.
   async function buyCards(my, targets, label = '', ctx = {}) {
     let bought = 0;
     const notes = [];
-    for (const [i, t] of targets.entries()) {
+    const fx = ctx.fx || null;
+    let list = targets;
+    for (let round = 0; round <= RETRY_ROUNDS && list.length; round++) {
+    const last = round === RETRY_ROUNDS;
+    const again = [];
+    if (round) {
+      status(label + L('bg.retryRound', { n: list.length, r: round, m: RETRY_ROUNDS }), 'ok', my);
+      await sleep(rnd(4000, 8000));   // ilanlar yenilensin
+      if (my !== token) return { bought, notes, halt: 'stopped' };
+    }
+    for (const [i, t] of list.entries()) {
       if (my !== token) return { bought, notes, halt: 'stopped' };
       if (ctx.tp != null && ctx.tp >= TP_MAX) return { bought, notes: [...notes, L('bg.tpFull', { n: ctx.tp })], halt: 'tpfull' };
       try {
-        status(label + L('bg.search', { name: t.name, i: i + 1, n: targets.length }), 'ok', my);
+        status(label + L('bg.search', { name: t.name, i: i + 1, n: list.length }), 'ok', my);
+        fx?.card(t.def, { st: 'find' });
         let done = false;
+        let retry = false;   // bu turda atlandı ama sonra yeniden denenebilir
         const noted = notes.length;
         for (let attempt = 1; attempt <= RETRY_MAX && !done; attempt++) {
           const tr = {};
@@ -2604,7 +3243,9 @@
             // Sınırın altında ilan yok: gerçek en ucuz fiyatı bul — rapora yazılır, canlı fiyat olarak saklanır
             const real = t.range?.maxb ? await findCheapestDef(t.def, t.range.minb ? { minb: t.range.minb } : null, null, t.rare) : null;
             savePrice(t.def, real ? real.buyNowPrice : 0);
-            notes.push(real ? L('bg.overCap', { name: t.name, p: fmt(real.buyNowPrice), c: fmt(t.range.maxb) }) : L('bg.noListing', { name: t.name }));
+            if (real) notes.push(L('bg.overCap', { name: t.name, p: fmt(real.buyNowPrice), c: fmt(t.range.maxb) }));
+            else if (last) notes.push(L('bg.noListing', { name: t.name }));
+            else retry = true;
             break;
           }
           const price = a.buyNowPrice;
@@ -2624,7 +3265,9 @@
             buys.push({ n: t.name, d: t.def, p: price, g: t.gg || 0, s: ctx.setName || '', at: Date.now() });
             store.set('gBuys', buys.slice(-200));
             run.coins = parseCoins(r) ?? (run.coins != null ? run.coins - price : null);
+            fx?.card(t.def, { st: 'ok', p: price }, { spent: fx.buy.spent + price, bought: fx.buy.bought + 1 });
             bought++;
+            (ctx.got ||= []).push(t.def);
             done = true;
             const ab = await afterBuy(it.id, price, t.ref);
             status(label + L('bg.bought', { name: t.name, p: fmt(price), x: ab.note }), 'ok', my);
@@ -2635,35 +3278,50 @@
             throw e;
           }
         }
-        if (!done && notes.length === noted) notes.push(L('bg.sniped', { name: t.name }));
+        if (!done && !retry && notes.length === noted) { if (last) notes.push(L('bg.sniped', { name: t.name })); else retry = true; }
+        if (retry) { again.push(t); fx?.card(t.def, { st: 'again' }); }
+        else if (!done) fx?.card(t.def, { st: 'skip' });
       } catch (err) {
         const why = stopReason(err);
         if (why) { fail(why); stop(why, 'error', my); return { bought, notes, halt: 'error' }; }
-        notes.push(`${t.name}: ${err?.message || L('error')}`);
+        if (last) { notes.push(`${t.name}: ${err?.message || L('error')}`); fx?.card(t.def, { st: 'fail' }); }
+        else { again.push(t); fx?.card(t.def, { st: 'again' }); }
       }
       await sleep(rnd(1000, 2500));
+    }
+    list = again;
     }
     return { bought, notes, halt: null };
   }
 
   async function resync(set) { try { saveSetDefs(set, await fetchSetDefs(set.filter)); } catch (_) {} }
 
-  async function buyPlan(my, setId, grade) {
+  // src: 'futgg' | 'gg' (Gallery Grab çözücü); want: ekranda onaylanan eksik kartlar (değiştiyse almaz — plan kilidi)
+  async function buyPlan(my, setId, grade, src = 'futgg', want = null) {
     const set = gal.cat.sets.find((s) => s.id === setId);
     if (set?.filter?.unsupported) return stop(L('bg.unsupported', { name: set.name }), 'warn', my);
     const defs = gal.defs.get(setId);
     if (!set || !defs) return stop(L('bg.needSync'), 'warn', my);
-    const plan = planFromTier(set, grade, defs, livePrices());
-    const todo = plan ? plan.cards.filter((c) => !c.col) : [];
+    let plan = src === 'gg' ? solveGrade(set, grade, defs, livePrices()) : planFromTier(set, grade, defs, livePrices());
+    if (plan?.unreachable) plan = null;
+    if (!plan) return stop(L('bg.noSol', { name: set.name, g: grade }), 'warn', my);
+    const todo = plan.cards.filter((c) => !c.col);
+    if (want && (want.length !== todo.length || todo.some((c) => !want.includes(c.def)))) return stop(L('bg.planChanged', { name: set.name, g: grade }), 'warn', my);
     if (!todo.length) return stop(L('bg.allOwned', { name: set.name }), 'ok', my);
     try { run.coins = parseCoins(await api.credits()); } catch (_) {}
     const ctx = await buyContext();
     if (ctx.full) return stop(L('bg.tpFull', { n: ctx.tp }), 'warn', my);
     ctx.setName = set.name;
-    const r = await buyCards(my, buyTargets(todo, settings.maxCard), '', ctx);
-    if (r.halt === 'stopped' || r.halt === 'error') { if (r.bought) markToGrade(set.id); return; }
+    ctx.got = [];
+    const targets = buyTargets(todo, settings.maxCard);
+    ctx.fx = buyFx(my, [set.id]);
+    ctx.fx.patch({ cur: set.id, cset: set.id, cards: fxCards(targets, todo) });
+    const r = await buyCards(my, targets, '', ctx);
+    if (r.halt === 'stopped' || r.halt === 'error') { ctx.fx.close(set.id, false); if (r.bought) { markToGrade(set.id); raiseFloor(set, ctx.got); } return; }
     await resync(set);
-    if (r.bought) markToGrade(set.id);
+    ctx.fx.close(set.id, true);
+    ctx.fx.patch({ end: Date.now() });
+    if (r.bought) { markToGrade(set.id); raiseFloor(set, ctx.got); }
     const s = gal.summary[set.id];
     const note = r.notes.length ? ' · ' + r.notes.slice(0, 3).join(' · ') + (r.notes.length > 3 ? ` (+${r.notes.length - 3})` : '') : '';
     const msg = L('bg.done1', { name: set.name, n: r.bought }) + note + (s ? L('bg.done1b', { c: s.collected, r: s.required, g: s.grade || '-' }) : '') + (r.bought ? L('bg.gradeHint') : '');
@@ -2701,11 +3359,13 @@
     let total = 0;
     let halt = null;
     const notes = [];
+    items = items.filter((it) => gal.cat.sets.some((s) => s.id === it.setId));
+    const fx = buyFx(my, items.map((it) => it.setId));
     for (const [i, it] of items.entries()) {
       if (my !== token) return;
       const set = gal.cat.sets.find((s) => s.id === it.setId);
-      if (!set) continue;
-      if (set.filter?.unsupported) { notes.push(L('bg.unsupported', { name: set.name })); continue; }
+      fx.patch({ cur: set.id, cards: [] });
+      if (set.filter?.unsupported) { notes.push(L('bg.unsupported', { name: set.name })); fx.close(set.id, false); continue; }
       const label = `[${i + 1}/${items.length}] ${set.name} · `;
       let defs = gal.defs.get(it.setId) || null;
       status(label + L('bg.syncing1', { name: set.name }), 'ok', my);
@@ -2714,7 +3374,7 @@
         if (why) { fail(why); return stop(why, 'error', my); }
       }
       if (my !== token) return;
-      if (!defs) { notes.push(L('bg.unsyncedSkip', { name: set.name })); continue; }
+      if (!defs) { notes.push(L('bg.unsyncedSkip', { name: set.name })); fx.close(set.id, false); continue; }
       let grade = it.grade;
       // Çoklu seçim (auto): o anki coin/bütçe ve CANLI fiyatlarla hedeften aşağı ulaşılabilir en yüksek derece.
       // Seçilen derecenin kartları fiyatlanır, karar yeniden verilir; derece değişirse yenisi de fiyatlanır (en çok 3 derece).
@@ -2728,23 +3388,29 @@
           seen.add(p.g);
           if (!(await priceFresh(my, set, p.g, defs, label))) return;
         }
-        if (!p.g) { notes.push(L('bg.autoNone.' + p.why, { name: set.name })); continue; }
+        if (!p.g) { notes.push(L('bg.autoNone.' + p.why, { name: set.name })); fx.close(set.id, true); continue; }
         if (p.fell) notes.push(L('bg.autoFell', { name: set.name, from: it.grade, to: p.g }));
         grade = p.g;
       }
       const plan = planFromTier(set, grade, defs, livePrices());
       const todo = plan ? plan.cards.filter((c) => !c.col) : [];
-      if (!todo.length) { if (plan) notes.push(L('bg.autoReady', { name: set.name, g: grade })); continue; }
+      if (!todo.length) { if (plan) notes.push(L('bg.autoReady', { name: set.name, g: grade })); fx.close(set.id, true); continue; }
       ctx.setName = set.name;
-      const r = await buyCards(my, buyTargets(todo, settings.maxCard), label, ctx);
+      ctx.got = [];
+      ctx.fx = fx;
+      const targets = buyTargets(todo, settings.maxCard);
+      fx.patch({ cset: set.id, cards: fxCards(targets, todo) });
+      const r = await buyCards(my, targets, label, ctx);
       total += r.bought;
-      if (r.halt === 'stopped' || r.halt === 'error') { if (r.bought) markToGrade(set.id); return; }
+      if (r.halt === 'stopped' || r.halt === 'error') { fx.close(set.id, false); if (r.bought) { markToGrade(set.id); raiseFloor(set, ctx.got); } return; }
       await resync(set);
-      if (r.bought) markToGrade(set.id);
+      if (r.bought) { markToGrade(set.id); raiseFloor(set, ctx.got); }
       notes.push(...r.notes.filter((x) => !notes.includes(x)));
+      fx.close(set.id, true);
       if (r.halt) { halt = r.halt; break; }
     }
     if (my !== token) return;
+    fx.patch({ end: Date.now() });
     const msg = L('bg.planDone', { n: total }) + (notes.length ? ' · ' + notes.slice(0, 3).join(' · ') + (notes.length > 3 ? ` (+${notes.length - 3})` : '') : '') + (total ? L('bg.gradeHint') : '');
     notify('Gallery Grab', msg);
     stop(msg, halt ? 'warn' : 'ok', my);
@@ -2812,6 +3478,181 @@
   }
   const taskBtn = (props) => { const b = h('button', props); if (run.running) b.disabled = true; return b; };
 
+  // ---------------------------------------------------------------- eşitleme animasyonu
+  // run.sync (syncSets): { ids, done, fail, cur, req, reqN, left, t0, end }. Panel her çizimde baştan kurulduğu için
+  // sürekli animasyonlar ortak saatten negatif gecikmeyle başlar, sayaçlar ve çubuklar zamana / önceki değere göre ilerler.
+  // Alım (run.buy, buyFx) aynı şeridi ve set kartı durumlarını kullanır: { ids, done, fail, cur, cset, cards, spent, bought, t0, end }.
+  const FX = { t0: 0, seen: new Set(), just: new Map(), last: new Map(), count: new Map(), raf: 0, hideTm: null, cur: null, follow: !!store.get('gFollow', false), ct0: 0, cseen: new Set(), cjust: new Map() };
+  // eşitleme ya da alım (görev başında ikisi de silinir; ikisi varsa yenisi)
+  const fxRun = () => { const a = run.sync, b = run.buy; return a && b ? (b.t0 > a.t0 ? b : a) : a || b || null; };
+  const fxBuy = () => { const x = fxRun(); return x && x === run.buy ? x : null; };
+  const BC_DONE = new Set(['ok', 'skip', 'fail']);
+  const fxBuyPart = (x) => (x.cards?.length ? x.cards.filter((c) => BC_DONE.has(c.st)).length / x.cards.length : 0);
+  const fxCardJust = (def) => { const j = FX.cjust.get(def); return j && Date.now() - j < FX_JUST * 1.6 ? j : 0; };
+  const FX_JUST = 1000, FX_KEEP = 12000, FX_COUNT = 900;
+  const fxReduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const fxEndAt = (x) => x.end || (run.running ? 0 : run.ts || x.t0);
+  const fxActive = () => !!fxRun() && (run.running || Date.now() - fxEndAt(fxRun()) < FX_KEEP);
+  const fxDelay = (period) => `-${Math.round(performance.now() % period)}ms`;
+  function fxTrack() {
+    const x = fxRun();
+    if (!x) { FX.t0 = 0; return; }
+    if (x.t0 !== FX.t0) { FX.t0 = x.t0; FX.seen = new Set([...x.done, ...x.fail]); FX.just.clear(); }
+    for (const id of [...x.done, ...x.fail]) if (!FX.seen.has(id)) { FX.seen.add(id); FX.just.set(id, Date.now()); }
+    // alımda biten kartlar bir kez parlar
+    const keys = (x.cards || []).filter((c) => BC_DONE.has(c.st)).map((c) => `${x.cset}:${c.def}:${c.st}`);
+    if (FX.ct0 !== x.t0) { FX.ct0 = x.t0; FX.cseen = new Set(keys); FX.cjust.clear(); }
+    for (const k of keys) if (!FX.cseen.has(k)) { FX.cseen.add(k); FX.cjust.set(Number(k.split(':')[1]), Date.now()); }
+    if (!run.running && !FX.hideTm && fxActive()) FX.hideTm = setTimeout(() => { FX.hideTm = null; render(); }, Math.max(0, FX_KEEP - (Date.now() - fxEndAt(x))) + 50);
+  }
+  function fxCard(id) {
+    const x = fxRun();
+    if (!x || !fxActive() || !x.ids.includes(id)) return null;
+    if (run.running && x.cur === id) return 'cur';
+    const j = FX.just.get(id);
+    if (j && Date.now() - j < FX_JUST) return x.fail.includes(id) ? 'fail' : 'just';
+    if (x.done.includes(id) || x.fail.includes(id)) return null;
+    return run.running ? 'q' : null;
+  }
+  const cntNow = (key, value) => {
+    const c = FX.count.get(key);
+    if (!c) return value;
+    const p = Math.min(1, (Date.now() - c.t) / FX_COUNT);
+    return c.from + (c.to - c.from) * (1 - (1 - p) ** 3);
+  };
+  function cntTick() {
+    FX.raf = 0;
+    for (const el of ui?.galEl?.querySelectorAll('[data-cnt]') || []) {
+      const c = FX.count.get(el.dataset.cnt);
+      if (c) el.textContent = el.cntShow(cntNow(el.dataset.cnt, c.to));
+    }
+    for (const [k, c] of FX.count) if (Date.now() - c.t >= FX_COUNT) FX.count.delete(k);
+    if (FX.count.size) FX.raf = requestAnimationFrame(cntTick);
+  }
+  function cnt(key, value, show = fmt) {
+    const last = FX.last.get(key);
+    FX.last.set(key, value);
+    if (!fxReduce && value != null && last != null && last !== value && fxActive()) FX.count.set(key, { from: FX.count.has(key) ? cntNow(key, last) : last, to: value, t: Date.now() });
+    const el = h('span', { text: show(cntNow(key, value)) });
+    el.dataset.cnt = key;
+    el.cntShow = show;
+    if (FX.count.size && !FX.raf) FX.raf = requestAnimationFrame(cntTick);
+    return el;
+  }
+  function slideBar(key, pct) {
+    const i = h('i');
+    const from = FX.last.get(key);
+    FX.last.set(key, pct);
+    i.style.width = (from ?? pct) + '%';
+    if (from != null && from !== pct) requestAnimationFrame(() => requestAnimationFrame(() => { i.style.width = pct + '%'; }));
+    return i;
+  }
+  function fxGo(id, open = false) {
+    const set = id && gal.cat?.sets.find((x) => x.id === id);
+    if (!set) return;
+    if (open) { gal.openId = id; gal.openGrade = null; gal.confirmBuy = false; gal.filter = 'all'; gal.listOpen = false; render(); return; }
+    if (gal.tab !== set.cat) galSet('tab', set.cat, 'gTab');
+    renderNow();
+    ui.galEl.querySelector(`.set[data-id="${id}"]`)?.scrollIntoView({ behavior: fxReduce ? 'auto' : 'smooth', block: 'center' });
+  }
+  // Üstteki ilerleme şeridi
+  function fxStrip() {
+    const x = fxRun();
+    if (!x || !fxActive()) return null;
+    if (x === fxBuy()) return fxBuyStrip(x);
+    const on = run.running;
+    const byId = new Map(gal.cat.sets.map((v) => [v.id, v]));
+    const k = x.done.length + x.fail.length;
+    const n = x.ids.length;
+    const part = on && x.cur ? Math.min(0.95, x.req / Math.max(1, x.reqN)) : 0;
+    const cur = on && x.cur ? byId.get(x.cur) : null;
+    const fol = h('input', { type: 'checkbox', checked: FX.follow, onchange: (e) => { FX.follow = e.target.checked; store.set('gFollow', FX.follow); if (FX.follow) fxGo(fxRun()?.cur); } });
+    const pb = slideBar('fxpb', on || !x.end ? +(((k + part) / n) * 100).toFixed(1) : 100);
+    return h('div', { class: 'syncfx' + (!on ? (x.end ? ' end' : ' stopped') : '') }, [
+      h('div', { class: 'hd' }, [
+        h('span', { class: 'ic' }),
+        h('b', { class: 'ttl', text: on ? L('fx.run') : x.end ? L('fx.done') : L('fx.stopped') }),
+        h('span', { class: 'ct', text: L('fx.count', { k: x.done.length, n }) + (x.fail.length ? ' · ' + L('fx.fail', { n: x.fail.length }) : '') }),
+        cur ? h('a', { class: 'now', href: '#', title: L('fx.now.title'), text: L('fx.now', { name: cur.name }) + (x.reqN > 1 ? ` (${L('fx.pages', { i: Math.min(x.req + 1, x.reqN), n: x.reqN })})` : ''), onclick: (e) => { e.preventDefault(); fxGo(cur.id, true); } }) : null,
+        h('span', { class: 'left', text: on ? (x.left ? L('fx.left', { t: fmtDur(x.left, L) }) : '') : L('fx.took', { d: fmtDur((fxEndAt(x) - x.t0) / 1000, L) }) }),
+        h('span', { style: 'flex:1' }),
+        h('label', { class: 'fol', title: L('fx.follow.title') }, [fol, L('fx.follow')]),
+      ]),
+      h('div', { class: 'pb' }, pb),
+      h('div', { class: 'dots' }, x.ids.map((id) => {
+        const j = FX.just.get(id);
+        const d = h('span', { title: byId.get(id)?.name || '', class: (x.done.includes(id) ? 'ok' : x.fail.includes(id) ? 'bad' : on && x.cur === id ? 'cur' : '') + (j && Date.now() - j < 500 ? ' pop' : '') });
+        d.onclick = () => fxGo(id, true);
+        return d;
+      })),
+    ]);
+  }
+
+  // Alım şeridi: başlık + harcanan (sayarak) + çubuk + o anki setin kart yüzleri + (çoklu alımda) set noktaları
+  const BC_TEXT = { find: 'fx.buy.find', skip: 'fx.buy.skip', fail: 'fx.buy.fail', again: 'fx.buy.again' };
+  function fxBuyStrip(x) {
+    const on = run.running;
+    const byId = new Map(gal.cat.sets.map((v) => [v.id, v]));
+    const n = x.ids.length;
+    const k = x.done.length + x.fail.length;
+    const multi = n > 1;
+    const cards = x.cards || [];
+    const cdone = cards.filter((c) => BC_DONE.has(c.st)).length;
+    const cur = x.cur ? byId.get(x.cur) : null;
+    const part = on && x.cur ? Math.min(0.95, fxBuyPart(x)) : 0;
+    const pb = slideBar('fxpb', on || !x.end ? +(((k + part) / n) * 100).toFixed(1) : 100);
+    const fol = h('input', { type: 'checkbox', checked: FX.follow, onchange: (e) => { FX.follow = e.target.checked; store.set('gFollow', FX.follow); if (FX.follow) fxGo(fxRun()?.cur); } });
+    const ct = [cur && cards.length ? L('fx.buy.cards', { k: cdone, n: cards.length }) : null, !on ? L('fx.buy.got', { n: x.bought }) : null,
+      multi ? L('fx.count', { k: x.done.length, n }) : null, x.fail.length ? L('fx.fail', { n: x.fail.length }) : null,
+      !on ? L('fx.took', { d: fmtDur((fxEndAt(x) - x.t0) / 1000, L) }) : null].filter(Boolean).join(' · ');
+    return h('div', { class: 'syncfx buy' + (!on ? (x.end ? ' end' : ' stopped') : '') }, [
+      h('div', { class: 'hd' }, [
+        h('span', { class: 'ic' }),
+        h('b', { class: 'ttl', text: on ? L('fx.buy.run') : x.end ? L('fx.buy.done') : L('fx.buy.stopped') }),
+        cur ? h('a', { class: 'now', href: '#', title: L('fx.now.title'), text: cur.name + (multi ? ` [${Math.min(k + 1, n)}/${n}]` : ''), onclick: (e) => { e.preventDefault(); fxGo(cur.id, true); } }) : null,
+        h('span', { class: 'ct', text: ct }),
+        h('span', { style: 'flex:1' }),
+        h('span', { class: 'spent' }, [L('fx.buy.spent') + ': ', h('b', {}, [cnt('spent' + x.t0, x.spent)])]),
+        multi ? h('label', { class: 'fol', title: L('fx.follow.title') }, [fol, L('fx.follow')]) : null,
+      ]),
+      h('div', { class: 'pb' }, pb),
+      h('div', { class: 'bcards' }, on && cur && !cards.length ? [h('span', { class: 'pick' }, [h('i', { class: 'spin' }), L('fx.buy.picking')])] : cards.map(buyChip)),
+      multi ? h('div', { class: 'dots' }, x.ids.map((id) => {
+        const j = FX.just.get(id);
+        const d = h('span', { title: byId.get(id)?.name || '', class: (x.done.includes(id) ? 'ok' : x.fail.includes(id) ? 'bad' : on && x.cur === id ? 'cur' : '') + (j && Date.now() - j < 500 ? ' pop' : '') });
+        d.onclick = () => fxGo(id, true);
+        return d;
+      })) : null,
+    ]);
+  }
+  // Şeritteki kart: yüz + reyting + ad + durum (alındıysa fiyat)
+  function buyChip(c) {
+    const j = fxCardJust(c.def);
+    const el = h('div', { class: `bc ${c.st}${c.rare > 1 ? ' sp' : ''}${j ? ' just' : ''}`, title: c.name }, [
+      icon(img.portrait(c.base), 'face'),
+      c.r ? h('b', { class: 'r', text: String(c.r) }) : null,
+      h('span', { class: 'n', text: c.name }),
+      h('span', { class: 'p', text: c.st === 'ok' ? KF(c.p) : BC_TEXT[c.st] ? L(BC_TEXT[c.st]) : '' }),
+      c.st === 'ok' ? h('span', { class: 'ok', text: '✓' }) : null,
+    ]);
+    if (c.st === 'find') el.style.setProperty('--fxd', fxDelay(1000));
+    if (j) el.style.setProperty('--fxj', `-${Date.now() - j}ms`);
+    return el;
+  }
+  // Detaydaki çözüm kartına alım durumu: fx-find / fx-ok (✓ + ödenen) / fx-skip / fx-fail, yeni bitende fx-just
+  function buyMark(el, setId, def) {
+    const x = fxBuy();
+    const b = x && fxActive() && x.cset === setId ? x.cards?.find((c) => c.def === def) : null;
+    if (!b || b.st === 'q') return el;
+    const j = fxCardJust(def);
+    el.classList.add('fx-' + b.st);
+    if (j) { el.classList.add('fx-just'); el.style.setProperty('--fxj', `-${Date.now() - j}ms`); }
+    if (b.st === 'find') el.style.setProperty('--fxd', fxDelay(1000));
+    if (b.st === 'ok' && !el.querySelector('.ok')) el.append(h('span', { class: 'ok', text: '✓' }));
+    el.append(h('span', { class: 'bst', text: b.st === 'ok' ? KF(b.p) : L(BC_TEXT[b.st]) }));
+    return el;
+  }
+
   function renderGallery() {
     const g = ui.gal;
     // Galeri içindeki bir kutuya yazılırken yeniden çizme (kutu silinmesin); odak kalkınca çizilir (focusout)
@@ -2823,6 +3664,13 @@
       return;
     }
     if (!gal.cat.categories.some((c) => c.id === gal.tab)) gal.tab = gal.cat.categories[0].id;
+    fxTrack();
+    if (FX.follow && run.running && fxRun()?.cur && fxRun().cur !== FX.cur && fxRun().ids.length > 1) {
+      FX.cur = fxRun().cur;
+      const fs = gal.cat.sets.find((x) => x.id === FX.cur);
+      if (fs && fs.cat !== gal.tab) galSet('tab', fs.cat, 'gTab');
+      requestAnimationFrame(() => ui.galEl.querySelector(`.set[data-id="${FX.cur}"]`)?.scrollIntoView({ behavior: fxReduce ? 'auto' : 'smooth', block: 'center' }));
+    }
     const sums = gal.summary;
     const next = new Map();
     for (const s of gal.cat.sets) { const n = bestNext(s, gal.defs.get(s.id) || null); if (n) next.set(s.id, n); }
@@ -2835,19 +3683,27 @@
       const full = sum && sum.collected >= sum.required;
       const n = next.get(set.id);
       const picked = gal.sel.on && gal.sel.ids.includes(set.id);
-      return h('div', { class: 'set' + (full ? ' full' : '') + (picked ? ' picked' : ''), onclick: () => { if (gal.sel.on) { toggleSel(set.id); return; } gal.openId = set.id; gal.openGrade = null; gal.confirmBuy = false; gal.filter = 'all'; gal.listOpen = false; render(); } }, [
-        full && !gal.sel.on ? h('span', { class: 'chk', text: '✓' }) : null,
+      const fx = fxCard(set.id);
+      const x = fxRun();
+      const el = h('div', { class: 'set' + (full ? ' full' : '') + (picked ? ' picked' : '') + (fx ? ' fx-' + fx : ''), onclick: () => { if (gal.sel.on) { toggleSel(set.id); return; } gal.openId = set.id; gal.openGrade = null; gal.confirmBuy = false; gal.filter = 'all'; gal.listOpen = false; render(); } }, [
+        fx === 'cur' ? h('span', { class: 'fxchip', text: fxBuy() ? L('fx.buy.chip') : L('fx.chip') }) : null,
+        fx === 'cur' ? h('div', { class: 'fxbar' }, slideBar('bar' + set.id, Math.round(Math.min(0.95, fxBuy() ? Math.max(0.05, fxBuyPart(x)) : (x.req + 0.5) / Math.max(1, x.reqN)) * 100))) : null,
+        full && !gal.sel.on && fx !== 'cur' ? h('span', { class: 'chk', text: '✓' }) : null,
         gal.sel.on ? h('span', { class: 'pick', text: picked ? String(gal.sel.ids.indexOf(set.id) + 1) : '' }) : null,
         gal.toGrade[set.id] || n?.ready ? h('span', { class: 'gbadge', text: L('grade.badge'), title: L('ov.toGrade.title') }) : null,
         h('div', { class: 'hd' }, [setArt(set), h('div', {}, [
           h('div', { class: 'nm', text: set.name }),
-          h('div', { class: 'cnt', text: sum ? L('card.collected', { n: sum.collected, req: set.required }) : `— / ${set.required}` }),
-          sum ? h('div', { class: 'sc', title: L('card.score') }, [h('i', { class: 'dia' }), fmt(sum.score)])
+          h('div', { class: 'cnt' }, sum ? cnt('c' + set.id, sum.collected, (v) => L('card.collected', { n: Math.round(v), req: set.required })) : `— / ${set.required}`),
+          sum ? h('div', { class: 'sc', title: L('card.score') }, [h('i', { class: 'dia' }), cnt('s' + set.id, sum.score)])
             : h('div', { class: 'mut', text: set.filter?.unsupported ? L('card.untrackable') : L('card.unsynced') }),
         ])]),
         diamonds(set, sum?.grade),
         h('div', { class: 'tk', title: n?.est ? L('card.est') : '' }, tokenRows(set, sum, n, L, reachableScore(set, gal.defs.get(set.id) || null)).flatMap(([l, v, c]) => [h('span', { text: l }), h('b', { class: c, text: v })])),
       ]);
+      el.dataset.id = set.id;
+      if (fx === 'cur') el.style.setProperty('--fxd', fxDelay(1400));
+      if (fx === 'just' || fx === 'fail') el.style.setProperty('--fxj', `-${Date.now() - FX.just.get(set.id)}ms`);
+      return el;
     };
     const synced = gal.cat.sets.filter((s) => s.cat === gal.tab && sums[s.id]);
     const earned = synced.reduce((a, s) => a + sumEarned(s, sums[s.id]), 0);
@@ -2855,6 +3711,20 @@
 
     // Chrome eklentisi de yüklüyse (aynı sayfada kendi menü sekmesi var) uyar
     const extOn = !!document.getElementById('fcg-tab');
+    // Sekme çubuğu her çizimde yeniden kurulur: kaydırma yeri korunur; yalnız sekme değişince ve seçilen görünmüyorsa kaydırılır
+    const tabsKeep = g.body.querySelector('.tabs')?.scrollLeft || 0;
+    queueMicrotask(() => {
+      const bar = g.body.querySelector('.tabs');
+      if (!bar) return;
+      bar.scrollLeft = tabsKeep;
+      if (gal.tabScrolled === gal.tab) return;
+      gal.tabScrolled = gal.tab;
+      const on = bar.querySelector('.on');
+      if (!on) return;
+      const b = bar.getBoundingClientRect(), r = on.getBoundingClientRect();
+      if (r.left < b.left) bar.scrollLeft += r.left - b.left - 8;
+      else if (r.right > b.right) bar.scrollLeft += r.right - b.right + 8;
+    });
     g.body.replaceChildren(
       extOn ? h('div', { class: 'unsup', text: L('us.extWarn') }) : null,
       h('div', { class: 'introw' }, [
@@ -2872,7 +3742,7 @@
         h('button', { class: gal.sel.on ? 'dan' : 'b', text: L('sel.mode'), title: L('sel.mode.title'), onclick: () => { gal.sel.on = !gal.sel.on; gal.selConfirm = false; saveSel(); render(); } }),
         taskBtn({ class: 'b', text: L('btn.planner'), title: L('btn.planner.title'), onclick: () => { gal.modal = 'planner'; gal.pl.confirm = false; runPlanner(); render(); } }),
         taskBtn({ class: 'b', text: L('btn.syncAll'), title: L('btn.syncAll.title'), onclick: () => { gal.syncTab = false; gal.modal = 'sync'; render(); } }),
-        taskBtn({ class: 'g', text: L('btn.syncTab', { name: tabName().split(' / ')[0] }), title: L('btn.syncTab.title', { name: tabName() }), onclick: () => { gal.syncTab = true; gal.modal = 'sync'; render(); } }),
+        taskBtn({ class: 'g stab', text: L('btn.syncTab', { name: tabName().split(' / ')[0] }), title: L('btn.syncTab.title', { name: tabName() }), onclick: () => { gal.syncTab = true; gal.modal = 'sync'; render(); } }),
       ]),
       h('div', { class: 'sub' }, [
         h('span', {}, [L('tab.info', { synced: synced.length, all }), h('b', { text: String(earned) }), L('tab.max', { max: gal.cat.sets.filter((x) => x.cat === gal.tab).reduce((a, x) => a + x.maxTokens, 0) })]),
@@ -2880,9 +3750,15 @@
         h('button', { class: 'g', text: L('btn.catRefresh'), onclick: () => refreshCatalog(true) }),
         h('button', { class: 'g', text: L('btn.diag'), title: L('btn.diag.title'), onclick: () => { gal.modal = 'diag'; render(); } }),
         h('button', { class: 'g', text: L('btn.buys'), title: L('btn.buys.title'), onclick: () => { gal.modal = 'buys'; render(); } }),
+        h('button', { class: gal.resetArm ? 'dan' : 'g', text: gal.resetArm ? L('resetGraded.confirm') : L('btn.resetGraded'), title: L('btn.resetGraded.title'), onclick: () => {
+          if (!gal.resetArm) { gal.resetArm = setTimeout(() => { gal.resetArm = null; render(); }, 3000); render(); return; }
+          clearTimeout(gal.resetArm); gal.resetArm = null; resetGraded(); status(L('resetGraded.done'), 'ok');
+        } }),
+        store.get('gAcct', null)?.name ? h('span', { class: 'mut', text: L('acct.label', { name: store.get('gAcct', null).name }) }) : null,
         h('label', {}, [L('sort') + ' ', sel(sortOptions(L), gal.sort, (x) => { galSet('sort', x, 'gSort'); render(); })]),
         h('label', {}, [L('show') + ' ', sel(showOptions(L), gal.show, (x) => { galSet('show', x, 'gShow'); render(); })]),
       ]),
+      fxStrip(),
       gal.sel.on ? selBar() : null,
       h('div', { class: 'grid' }, sets.length ? sets.map(card) : [h('div', { class: 'empty', text: all ? L('grid.emptyFilter') : L('grid.empty') })]),
     );
@@ -3190,6 +4066,23 @@
     ])]);
   }
 
+  // Çözüm kaynağı: 'futgg' (varsayılan) | 'gg' (Gallery Grab); seçilen kaynakta o derece yoksa diğeri
+  const plansFor = (set, grade, defs, live) => {
+    const gg = solveGrade(set, grade, defs, live);
+    return { fg: planFromTier(set, grade, defs, live), gg: gg && !gg.unreachable ? gg : null };
+  };
+  const pickPlan = (pl) => (store.get('gSrc', 'futgg') === 'gg' ? pl.gg || pl.fg : pl.fg || pl.gg);
+  const planCost = (p, defs) => (defs ? p.need : p.cost);
+  function srcSwitch(pl, plan, defs) {
+    const cf = pl.fg && planCost(pl.fg, defs), cg = pl.gg && planCost(pl.gg, defs);
+    const btn = (k, p, c, other) => h('button', {
+      class: (plan.src === 'gg' ? 'gg' : 'futgg') === k ? 'on' : '', disabled: !p, title: L('src.title.' + k),
+      onclick: () => { store.set('gSrc', k); gal.confirmBuy = false; gal.filter = 'all'; render(); },
+    }, [h('b', { text: L('src.' + k) }), h('span', { text: p ? L('coins', { n: fmt(c) }) : L('src.none') }),
+      p && other != null && c < other ? h('i', { text: L('src.cheaper', { n: KF(other - c) }) }) : null]);
+    return h('div', { class: 'srcsw' }, [h('span', { class: 'l', text: L('src.label') }), btn('futgg', pl.fg, cf, cg), btn('gg', pl.gg, cg, cf)]);
+  }
+
   function detailView() {
     const set = gal.cat.sets.find((s) => s.id === gal.openId);
     if (!set) { gal.openId = null; return null; }
@@ -3197,14 +4090,23 @@
     const saved = defs ? store.get('gdefs:' + set.id, null) : null;
     const sum = defs ? summarise(set, defs) : null;
     // Varsayılan: şu an ulaşılabilir en yüksek derece (coin/bütçe + ilan); yoksa eski kural
-    if (!gal.openGrade || !set.sol?.tiers?.some((t) => t.g === gal.openGrade)) gal.openGrade = pickGrade(set, gal.defs.get(set.id) || null, livePrices(), null, availCoins()).g || defaultTier(set, sum?.score || 0);
+    if (!gal.openGrade || !pickPlan(plansFor(set, gal.openGrade, defs, livePrices()))) gal.openGrade = pickGrade(set, gal.defs.get(set.id) || null, livePrices(), null, availCoins()).g || defaultTier(set, sum?.score || 0);
     const close = () => { gal.openId = null; render(); };
     const live = livePrices();
     const sync1 = () => startTask((my) => syncPrice(my, set.id, gal.openGrade), L('bg.syncStart'));
 
     const head = sum ? h('div', {}, [
       h('div', {}, [L('hd.line', { c: sum.collected, r: set.required }), h('b', { text: fmt(sum.score) }), L('hd.line2', { g: sum.grade || '—', e: sum.earned, m: sum.maxTokens })]),
+      sum.collected < set.required && !set.floor ? h('div', { class: 'warnt', text: L('hd.incomplete', { n: set.required - sum.collected }) }) : null,
       h('div', { class: 'mut', text: sum.next ? L('hd.next', { g: sum.next.g, n: fmt(sum.need) }) : L('hd.top') }),
+      // puan dökümü: taban + bonus, açılınca etiketler (en yüksek 10 sayılır)
+      sum.bonus || sum.tags?.some((r) => r.pct > 0) ? h('details', { class: 'tags' }, [
+        h('summary', { text: L('pts.split', { b: fmt(sum.base), x: fmt(sum.bonus) }) }),
+        h('div', { class: 'tagl' }, tagRows(sum.tags, L).map((r) => h('div', { class: r.off ? 'off' : '', title: r.off ? L('tags.off') : '' }, [
+          h('span', { text: r.name }), h('small', { text: L('tags.row', { n: r.n, p: r.pct }) }), h('b', { text: '+' + fmt(r.bonus) }),
+        ]))),
+        h('div', { class: 'mut', text: L('tags.note') }),
+      ]) : null,
       (() => {
         const sel = h('select', { title: L('ingame.title'), onchange: (e) => setGraded(set.id, e.target.value) },
           [h('option', { value: '', text: L('ingame.auto') }), ...set.grades.map((g) => h('option', { value: g.g, text: g.g }))]);
@@ -3216,16 +4118,19 @@
     ]) : null;
 
     const tabs = set.sol ? h('div', { class: 'gtabs' }, set.grades.map((g) => {
-      const p = planFromTier(set, g.g, defs, live);
+      const p = pickPlan(plansFor(set, g.g, defs, live));
       return h('div', {
-        class: `gt ${g.g}${g.g === gal.openGrade ? ' on' : ''}${p ? '' : ' na'}${sum && sum.score >= g.score ? ' got' : ''}`, title: gradeTitle(set, g.g),
+        class: `gt ${g.g}${g.g === gal.openGrade ? ' on' : ''}${p ? '' : ' na'}${sum && sum.score >= g.score ? ' got' : ''}${p?.src === 'gg' ? ' gg' : ''}`, title: gradeTitle(set, g.g),
         onclick: () => { if (p) { gal.openGrade = g.g; gal.confirmBuy = false; render(); } },
-      }, [h('b', { text: g.g }), h('div', { class: 'c', text: p ? L('coins', { n: fmt(defs ? p.need : p.cost) }) : L('unreachable') }), h('div', { class: 't', text: L('tokens', { n: p ? p.tokens : g.tokens || 0 }) })]);
+      }, [h('b', { text: g.g }), h('div', { class: 'c', text: p ? L('coins', { n: fmt(planCost(p, defs)) }) : L('unreachable') }), h('div', { class: 't', text: L('tokens', { n: p ? p.tokens : g.tokens || 0 }) })]);
     })) : null;
 
     let body;
-    const plan = set.sol && gal.openGrade ? planFromTier(set, gal.openGrade, defs, live) : null;
+    const pl = set.sol && gal.openGrade ? plansFor(set, gal.openGrade, defs, live) : null;
+    const plan = pl ? pickPlan(pl) : null;
     if (plan) {
+      const gg = plan.src === 'gg';
+      const fell = (store.get('gSrc', 'futgg') === 'gg') !== gg;
       const act = set.filter?.unsupported
         ? h('div', { class: 'unsup', text: L('unsupported.note') })
         : !plan.synced
@@ -3239,7 +4144,8 @@
             onclick: () => {
               if (!gal.confirmBuy) { gal.confirmBuy = true; render(); return; }
               gal.confirmBuy = false;
-              startTask((my) => buyPlan(my, set.id, plan.grade), L('bg.buyStart'));
+              const want = plan.cards.filter((c) => !c.col).map((c) => c.def);
+              startTask((my) => buyPlan(my, set.id, plan.grade, gg ? 'gg' : 'futgg', want), L('bg.buyStart'));
             },
           }),
           gal.confirmBuy ? h('button', { class: 'g', text: L('cancel'), onclick: () => { gal.confirmBuy = false; render(); } }) : null,
@@ -3247,29 +4153,34 @@
       const chips = plan.synced ? h('div', { class: 'chips' }, [['all', plan.cards.length], ['missing', plan.missing], ['collected', plan.cards.length - plan.missing]].map(([k, n]) =>
         h('button', { class: gal.filter === k ? 'on' : '', text: `${L('chip.' + k)} (${n})`, onclick: () => { gal.filter = k; render(); } }))) : null;
       body = h('div', { class: 'plan' }, [
+        srcSwitch(pl, plan, plan.synced),
+        fell ? h('div', { class: 'warnt', text: gg ? L('sol.fell.gg') : L('sol.fell.futgg') }) : null,
+        gg ? h('div', { class: 'ggline' }, plan.synced
+          ? [L('sol.gg.have', { h: plan.cards.length - plan.missing }), plan.missing ? h('b', { text: L('sol.gg.buy', { n: plan.missing, c: fmt(plan.need) }) }) : '', L('sol.gg.get', { g: plan.grade, s: fmt(plan.sumSc), th: fmt(plan.threshold), b: fmt(plan.sumBonus) })]
+          : [L('sol.gg.unsynced', { n: plan.missing, c: fmt(plan.need), g: plan.grade })]) : null,
         h('div', { class: 'stats6' }, [
           h('div', { title: plan.priced ? L('st.need.title.live') : L('st.need.title.futgg') }, [plan.priced ? L('st.need.live', { p: plan.priced, m: plan.missing }) : L('st.need.futgg'), h('b', { text: plan.synced ? fmt(plan.need) : '—' })]),
-          h('div', {}, [L('st.total'), h('b', { text: fmt(plan.cost) })]),
+          h('div', {}, [gg ? L('st.total.gg') : L('st.total'), h('b', { text: fmt(gg ? plan.cards.reduce((a, c) => a + (c.price || 0), 0) : plan.cost) })]),
           h('div', {}, [L('st.tax'), h('b', { text: fmt(plan.synced ? plan.tax : Math.ceil(plan.cost * 0.05)) })]),
           h('div', { title: L('st.sumPts.title') }, [L('st.sumPts'), h('b', { text: `${fmt(plan.sumSc)} / ${fmt(plan.threshold)}` })]),
           h('div', {}, [L('st.tokens'), h('b', { text: String(plan.tokens) })]),
           h('div', {}, [L('st.cards'), h('b', { text: plan.synced ? L('st.have', { h: plan.cards.length - plan.missing, n: plan.cards.length }) : String(plan.cards.length) })]),
         ]),
         act,
-        h('div', { class: 'mut', text: L('sol.note', { g: plan.grade, d: solDate(set) }) + solAge(set) + (plan.noListing ? L('sol.noListing', { n: plan.noListing }) : '') + L('sol.bonus') }),
+        h('div', { class: 'mut', text: (gg ? L('sol.note.gg', { d: solDate(set) }) : L('sol.note', { g: plan.grade, d: solDate(set) }) + solAge(set)) + (plan.noListing ? L('sol.noListing', { n: plan.noListing }) : '') + L('sol.bonus') }),
         chips,
         h('div', { class: 'solg' }, plan.cards
           .filter((c) => gal.filter === 'all' || (gal.filter === 'missing' ? !c.col : c.col))
           .sort((a, b) => (a.col - b.col) || b.price - a.price)
-          .map((c) => h('div', { class: 'sc2' + (c.col ? ' col' : '') + (c.rare > 1 ? ' sp' : ''), title: L('card.tip', { name: c.name || '#' + c.def, r: c.r, sc: fmt(c.sc), p: fmt(c.cost) }) + (c.col ? L('card.tip.col') : '') }, [
+          .map((c) => buyMark(h('div', { class: 'sc2' + (c.col ? ' col' : '') + (c.rare > 1 ? ' sp' : ''), title: L('card.tip', { name: c.name || '#' + c.def, r: c.r, sc: fmt(c.sc), p: fmt(c.cost) }) + (c.col ? L('card.tip.col') : '') }, [
             h('span', { class: 'rt', text: c.r }), c.col ? h('span', { class: 'ok', text: '✓' }) : null,
             icon(img.portrait(c.base), 'face'), h('div', { class: 'nm', text: c.name || '—' }),
             h('div', { class: 'ft' }, [h('span', { class: 'v', text: L('pts', { n: fmt(c.sc) }), title: L('pts.tip', { n: fmt(c.sc), src: c.scSrc }) }),
-              c.col ? h('span', { class: 'p', text: KF(c.price) })
+              c.col ? h('span', { class: 'p', text: c.price != null ? KF(c.price) : '' })
                 : c.live === 0 ? h('span', { class: 'p none', text: L('noListing') })
                 : c.live > 0 ? h('span', { class: 'p live', text: KF(c.live), title: L('live.tip', { p: fmt(c.price) }) })
                 : h('span', { class: 'p', text: KF(c.price), title: L('futgg.tip') })]),
-          ]))),
+          ]), set.id, c.col ? null : c.def))),
       ]);
     } else if (!defs && !set.filter?.unsupported) {
       body = h('div', { class: 'plan' }, [L('notSynced') + ' ', taskBtn({ class: 'b', text: L('btn.sync'), onclick: sync1 })]);
@@ -3305,7 +4216,7 @@
 #fcgu-panel .fcg-title { display:flex; align-items:center; gap:6px; font-size:14px; letter-spacing:1px; }
 #fcgu-panel .fcg-title b { color:#2fd08a; }
 #fcgu-panel .fcg-spacer { flex:1; }
-#fcgu-panel .fcg-body { flex:1; min-height:0; overflow:auto; }
+#fcgu-panel .fcg-body { flex:1; min-height:0; overflow:auto; scrollbar-gutter:stable; }
 #fcgu-panel .fcg-in { max-width:760px; margin:0 auto; padding:4px 12px 16px; }
 #fcgu-panel section { padding:10px 0; border-bottom:1px solid #2a2f3a; }
 #fcgu-panel input, #fcgu-panel textarea, #fcgu-panel select { width:100%; background:#181b22; color:#e7e9ee; border:1px solid #2a2f3a;
@@ -3368,7 +4279,8 @@
 #fcgu-panel .fcg-gal { flex:1; min-height:0; display:flex; flex-direction:column; position:relative;
   background:radial-gradient(1200px 600px at 10% -10%, #1b2d55 0%, transparent 60%), linear-gradient(160deg,#0b1322 0%,#0c2230 60%,#0b3b3a 100%); }
 #fcgu-panel .fcg-gal[hidden] { display:none; }
-#fcgu-panel .gbody { flex:1; min-height:0; overflow:auto; padding:14px 16px; }
+#fcgu-panel .stab { width:170px; flex:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#fcgu-panel .gbody { flex:1; min-height:0; overflow:auto; scrollbar-gutter:stable; padding:14px 16px; }
 #fcgu-panel .gfoot { flex:none; display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:8px 16px; background:rgba(7,12,22,.94); border-top:1px solid #23324d; font-size:12px; color:#8a97ad; }
 #fcgu-panel .gfoot b { color:#e9eef7; }
 #fcgu-panel .gfoot input { width:110px; padding:4px 6px; }
@@ -3393,6 +4305,86 @@
 #fcgu-panel .set.full { border-color:rgba(47,208,138,.45); }
 #fcgu-panel .set .pick { position:absolute; top:10px; right:12px; width:18px; height:18px; border:1.5px solid #8a97ad; border-radius:5px; display:grid; place-items:center; font-weight:800; font-size:12px; color:#1a1400; }
 #fcgu-panel .set.picked { border-color:#f5c518; box-shadow:0 0 0 1px #f5c518 inset; }
+#fcgu-panel .gt.gg .c::after { content:' ◆'; color:#2fd08a; font-size:9px; }
+#fcgu-panel .srcsw { display:flex; gap:6px; align-items:stretch; flex-wrap:wrap; margin:0 0 10px; }
+#fcgu-panel .srcsw .l { align-self:center; color:#8a97ad; font-size:12px; }
+#fcgu-panel .srcsw button { display:flex; flex-direction:column; align-items:flex-start; gap:1px; padding:6px 12px; border-radius:10px; border:1px solid #23324d; background:rgba(255,255,255,.02); color:#e9eef7; cursor:pointer; font-size:12px; min-width:130px; }
+#fcgu-panel .srcsw button b { font-size:12.5px; }
+#fcgu-panel .srcsw button.on { border-color:#f5c518; background:rgba(245,197,24,.08); box-shadow:inset 0 0 0 1px #f5c518; }
+#fcgu-panel .srcsw button:disabled { opacity:.4; cursor:default; }
+#fcgu-panel .srcsw button i { font-style:normal; color:#2fd08a; font-size:11px; font-weight:700; }
+#fcgu-panel .ggline { margin:0 0 10px; padding:8px 10px; border-radius:8px; background:rgba(47,208,138,.07); border:1px solid rgba(47,208,138,.25); font-size:12.5px; }
+#fcgu-panel .ggline b { color:#f5c518; }
+#fcgu-panel .warnt { color:#f0b43c; font-size:12px; margin:2px 0; }
+#fcgu-panel .syncfx { position:sticky; top:-14px; z-index:5; margin:10px 0 8px; padding:10px 12px 11px; border:1px solid rgba(245,197,24,.35); border-radius:12px; background:linear-gradient(180deg,#14223a,#101b2e); box-shadow:0 8px 24px rgba(0,0,0,.45); overflow:hidden; }
+#fcgu-panel .syncfx::before { content:''; position:absolute; inset:0; background:linear-gradient(100deg,transparent 35%,rgba(245,197,24,.07) 50%,transparent 65%); background-size:300% 100%; animation:fxsweep 2.4s linear infinite; animation-delay:var(--fxs,0ms); pointer-events:none; }
+#fcgu-panel .syncfx.end { border-color:rgba(47,208,138,.45); } #fcgu-panel .syncfx.stopped { border-color:rgba(240,180,60,.45); }
+#fcgu-panel .syncfx.end::before, #fcgu-panel .syncfx.stopped::before { display:none; }
+#fcgu-panel .syncfx .hd { position:relative; display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:13px; }
+#fcgu-panel .syncfx .ic { width:14px; height:14px; box-sizing:border-box; border:2px solid rgba(245,197,24,.25); border-top-color:#f5c518; border-radius:50%; animation:fxspin .8s linear infinite; flex:none; }
+#fcgu-panel .syncfx.end .ic { border:0; border-radius:0; animation:none; background:#2fd08a; -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.2 11.6 2.7 8.1l1.4-1.4 2.1 2.1 5.7-5.7 1.4 1.4z'/%3E%3C/svg%3E") center/contain no-repeat; mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.2 11.6 2.7 8.1l1.4-1.4 2.1 2.1 5.7-5.7 1.4 1.4z'/%3E%3C/svg%3E") center/contain no-repeat; }
+#fcgu-panel .syncfx.stopped .ic { border-color:#f0b43c; animation:none; }
+#fcgu-panel .syncfx .ttl { font-weight:800; } #fcgu-panel .syncfx.end .ttl { color:#2fd08a; } #fcgu-panel .syncfx.stopped .ttl { color:#f0b43c; }
+#fcgu-panel .syncfx .now { color:#f5c518; text-decoration:none; border-bottom:1px dotted rgba(245,197,24,.5); }
+#fcgu-panel .syncfx .left { color:#8a97ad; }
+#fcgu-panel .syncfx .fol { display:flex; gap:5px; align-items:center; color:#8a97ad; font-size:12px; cursor:pointer; }
+#fcgu-panel .syncfx .fol input { width:auto; height:auto; margin:0; padding:0; accent-color:#f5c518; }
+#fcgu-panel .syncfx .pb { position:relative; height:6px; margin:9px 0 8px; background:#0a1220; border-radius:99px; overflow:hidden; }
+#fcgu-panel .syncfx .pb i { position:relative; display:block; height:100%; border-radius:99px; background:linear-gradient(90deg,#d9a90c,#f5c518,#ffe27a); box-shadow:0 0 12px rgba(245,197,24,.55); transition:width .7s cubic-bezier(.2,.8,.2,1); overflow:hidden; }
+#fcgu-panel .syncfx .pb i::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent); background-size:50% 100%; background-repeat:no-repeat; animation:fxgloss 1.3s linear infinite; }
+#fcgu-panel .syncfx.end .pb i { background:#2fd08a; box-shadow:0 0 12px rgba(47,208,138,.5); } #fcgu-panel .syncfx.stopped .pb i { background:#f0b43c; box-shadow:none; }
+#fcgu-panel .syncfx.end .pb i::after, #fcgu-panel .syncfx.stopped .pb i::after { display:none; }
+#fcgu-panel .syncfx .dots { position:relative; display:flex; flex-wrap:wrap; gap:3px; }
+#fcgu-panel .syncfx .dots span { width:9px; height:9px; border-radius:2px; background:#1d2a42; cursor:pointer; }
+#fcgu-panel .syncfx .dots .ok { background:#2fd08a; } #fcgu-panel .syncfx .dots .bad { background:#ef5a5a; } #fcgu-panel .syncfx .dots .pop { animation:fxdot .45s ease-out; }
+#fcgu-panel .syncfx .dots .cur { background:#f5c518; animation:fxpulse 1s ease-in-out infinite; }
+#fcgu-panel .set.fx-q { opacity:.5; filter:saturate(.6); }
+#fcgu-panel .set.fx-cur { border-color:#f5c518; box-shadow:0 0 0 1px #f5c518, 0 0 24px rgba(245,197,24,.35); transform:translateY(-2px); }
+#fcgu-panel .set.fx-cur::after { content:''; position:absolute; inset:0; border-radius:inherit; pointer-events:none; background:linear-gradient(100deg,transparent 30%,rgba(245,197,24,.16) 50%,transparent 70%); background-size:300% 100%; animation:fxsweep 1.4s linear infinite; animation-delay:var(--fxd,0ms); }
+#fcgu-panel .set .fxchip { position:absolute; top:9px; right:10px; padding:1px 7px; border-radius:99px; background:rgba(245,197,24,.15); color:#f5c518; font-size:10.5px; font-weight:700; animation:fxblink 1.2s ease-in-out infinite; animation-delay:var(--fxd,0ms); }
+#fcgu-panel .set .fxbar { position:absolute; left:12px; right:12px; bottom:6px; height:3px; border-radius:9px; background:rgba(255,255,255,.07); overflow:hidden; }
+#fcgu-panel .set .fxbar i { display:block; height:100%; background:#f5c518; box-shadow:0 0 8px #f5c518; transition:width .6s ease; }
+#fcgu-panel .set.fx-just { animation:fxpop .9s ease-out var(--fxj,0ms) both; }
+#fcgu-panel .set.fx-just .sc { animation:fxglow .9s ease-out var(--fxj,0ms) both; }
+#fcgu-panel .set.fx-fail { animation:fxshake .5s ease-in-out var(--fxj,0ms) both; border-color:rgba(239,90,90,.6); }
+#fcgu-panel .syncfx .spent { color:#8a97ad; } #fcgu-panel .syncfx .spent b { color:#f5c518; } #fcgu-panel .syncfx.end .spent b { color:#2fd08a; }
+#fcgu-panel .syncfx .bcards { position:relative; display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+#fcgu-panel .syncfx .bcards .pick { display:flex; gap:7px; align-items:center; color:#8a97ad; font-size:12px; padding:6px 2px; position:static; width:auto; height:auto; border:0; background:none; }
+#fcgu-panel .syncfx .bcards .spin { width:11px; height:11px; border:2px solid rgba(245,197,24,.25); border-top-color:#f5c518; border-radius:50%; animation:fxspin .8s linear infinite; box-sizing:border-box; }
+#fcgu-panel .bc { position:relative; display:grid; grid-template-columns:30px auto; grid-template-rows:auto auto; column-gap:6px; align-items:center; padding:4px 8px 4px 4px; min-width:92px; max-width:150px; border:1px solid #22314d; border-radius:9px; background:#111b2e; overflow:hidden; transition:opacity .3s, border-color .3s; }
+#fcgu-panel .bc .face { grid-row:1 / 3; width:30px; height:30px; border-radius:6px; object-fit:cover; background:#16233b; }
+#fcgu-panel .bc .r { position:absolute; left:3px; bottom:2px; font-size:9.5px; font-weight:800; padding:0 3px; border-radius:4px; background:rgba(0,0,0,.65); }
+#fcgu-panel .bc .n { padding-right:10px; font-size:11px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#fcgu-panel .bc .p { font-size:10.5px; color:#8a97ad; }
+#fcgu-panel .bc .ok { position:absolute; top:2px; right:5px; color:#2fd08a; font-weight:800; font-size:11px; }
+#fcgu-panel .bc.sp { border-color:rgba(166,107,255,.45); } #fcgu-panel .bc.q { opacity:.45; filter:saturate(.5); }
+#fcgu-panel .bc.find { border-color:#f5c518; box-shadow:0 0 0 1px #f5c518, 0 0 14px rgba(245,197,24,.35); animation:fxbreath 1s ease-in-out infinite; animation-delay:var(--fxd,0ms); }
+#fcgu-panel .bc.find::after { content:''; position:absolute; inset:0; pointer-events:none; background:linear-gradient(100deg,transparent 30%,rgba(245,197,24,.2) 50%,transparent 70%); background-size:300% 100%; animation:fxsweep 1s linear infinite; animation-delay:var(--fxd,0ms); }
+#fcgu-panel .bc.find .p { color:#f5c518; }
+#fcgu-panel .bc.ok { border-color:rgba(47,208,138,.5); } #fcgu-panel .bc.ok .p { color:#2fd08a; font-weight:800; }
+#fcgu-panel .bc.ok.just { animation:fxpop .9s ease-out var(--fxj,0ms) both; } #fcgu-panel .bc.ok.just .p { animation:fxdrop .6s cubic-bezier(.2,.9,.3,1.3) var(--fxj,0ms) both; }
+#fcgu-panel .bc.again { border-style:dashed; border-color:rgba(240,180,60,.6); } #fcgu-panel .bc.again .p { color:#f0b43c; }
+#fcgu-panel .sc2.fx-again { border-style:dashed; border-color:rgba(240,180,60,.6); } #fcgu-panel .sc2.fx-again .bst { color:#f0b43c; }
+#fcgu-panel .bc.skip { opacity:.55; } #fcgu-panel .bc.skip .n { text-decoration:line-through; color:#8a97ad; } #fcgu-panel .bc.skip .p { color:#f0b43c; }
+#fcgu-panel .bc.fail { border-color:rgba(239,90,90,.6); } #fcgu-panel .bc.fail .p { color:#ef5a5a; } #fcgu-panel .bc.fail.just { animation:fxshake .5s ease-in-out var(--fxj,0ms) both; }
+#fcgu-panel .sc2 .bst { display:block; margin-top:3px; font-size:10.5px; font-weight:800; border-radius:5px; padding:1px 0; background:rgba(255,255,255,.05); color:#8a97ad; }
+#fcgu-panel .sc2.fx-find { border-color:#f5c518; box-shadow:0 0 0 1px #f5c518, 0 0 16px rgba(245,197,24,.35); animation:fxbreath 1s ease-in-out infinite; animation-delay:var(--fxd,0ms); } #fcgu-panel .sc2.fx-find .bst { color:#f5c518; }
+#fcgu-panel .sc2.fx-ok { border-color:rgba(47,208,138,.6); } #fcgu-panel .sc2.fx-ok .bst { color:#2fd08a; background:rgba(47,208,138,.12); }
+#fcgu-panel .sc2.fx-ok.fx-just { animation:fxpop .9s ease-out var(--fxj,0ms) both; } #fcgu-panel .sc2.fx-ok.fx-just .bst { animation:fxdrop .6s cubic-bezier(.2,.9,.3,1.3) var(--fxj,0ms) both; }
+#fcgu-panel .sc2.fx-skip { opacity:.6; } #fcgu-panel .sc2.fx-skip .bst { color:#f0b43c; }
+#fcgu-panel .sc2.fx-fail { border-color:rgba(239,90,90,.6); } #fcgu-panel .sc2.fx-fail .bst { color:#ef5a5a; } #fcgu-panel .sc2.fx-fail.fx-just { animation:fxshake .5s ease-in-out var(--fxj,0ms) both; }
+@keyframes fxbreath { 0%,100% { transform:none; } 50% { transform:translateY(-1px) scale(1.03); } }
+@keyframes fxdrop { 0% { opacity:0; transform:translateY(-10px) scale(1.3); } 100% { opacity:1; transform:none; } }
+@keyframes fxspin { to { transform:rotate(360deg); } }
+@keyframes fxsweep { from { background-position:100% 0; } to { background-position:-50% 0; } }
+@keyframes fxgloss { from { background-position:-60% 0; } to { background-position:160% 0; } }
+@keyframes fxdot { 0% { transform:scale(1.9); } 100% { transform:scale(1); } }
+@keyframes fxpulse { 0%,100% { transform:scale(1); box-shadow:0 0 0 0 rgba(245,197,24,.6); } 50% { transform:scale(1.25); box-shadow:0 0 0 3px rgba(245,197,24,0); } }
+@keyframes fxblink { 0%,100% { opacity:1; } 50% { opacity:.45; } }
+@keyframes fxpop { 0% { transform:scale(.97); box-shadow:0 0 0 2px #2fd08a, 0 0 32px rgba(47,208,138,.65); border-color:#2fd08a; } 35% { transform:scale(1.03); } 100% { transform:none; box-shadow:0 0 0 0 rgba(47,208,138,0); } }
+@keyframes fxglow { 0% { text-shadow:0 0 14px #2fd08a; transform:scale(1.15); } 100% { text-shadow:none; transform:none; } }
+@keyframes fxshake { 0%,100% { transform:none; } 25% { transform:translateX(-4px); } 75% { transform:translateX(4px); } }
+@media (prefers-reduced-motion: reduce) { #fcgu-panel .syncfx, #fcgu-panel .syncfx *, #fcgu-panel .syncfx::before, #fcgu-panel .set, #fcgu-panel .set *, #fcgu-panel .set::after, #fcgu-panel .bc, #fcgu-panel .bc *, #fcgu-panel .bc::after, #fcgu-panel .sc2, #fcgu-panel .sc2 * { animation:none !important; transition:none !important; } }
 #fcgu-panel .set.picked .pick { background:#f5c518; border-color:#f5c518; }
 #fcgu-panel .selbar { position:sticky; top:0; z-index:3; background:rgba(9,16,29,.97); border:1px solid rgba(245,197,24,.45); border-radius:12px; padding:10px 12px; margin:0 0 12px; }
 #fcgu-panel .selbar .hd { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
@@ -3441,6 +4433,14 @@
 #fcgu-panel .box h3 { margin:0 0 8px; }
 #fcgu-panel .big { font-size:22px; font-weight:800; color:#f5c518; margin:6px 0; }
 #fcgu-panel .row.end { justify-content:flex-end; margin-top:14px; }
+#fcgu-panel details.tags { margin-top:6px; font-size:12px; }
+#fcgu-panel details.tags summary { cursor:pointer; color:#8ea0bf; }
+#fcgu-panel .tagl { display:grid; gap:2px; margin:6px 0 4px; }
+#fcgu-panel .tagl > div { display:grid; grid-template-columns:1fr auto auto; gap:10px; align-items:baseline; }
+#fcgu-panel .tagl small { color:#8ea0bf; }
+#fcgu-panel .tagl b { color:#3ddc84; min-width:56px; text-align:right; }
+#fcgu-panel .tagl .off { opacity:.45; }
+#fcgu-panel .tagl .off b { text-decoration:line-through; }
 #fcgu-panel .gtabs { display:grid; grid-template-columns:repeat(5,1fr); border:1px solid #23324d; border-radius:10px; overflow:hidden; margin:12px 0 10px; }
 #fcgu-panel .gt { padding:8px 6px; text-align:center; cursor:pointer; border-right:1px solid #23324d; }
 #fcgu-panel .gt:last-child { border-right:0; }

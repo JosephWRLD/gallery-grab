@@ -50,6 +50,66 @@ test('summarise: toplananların en yüksek required tanesi sayılır', () => {
   assert.equal(s.need, 50);
 });
 
+// ---------------------------------------------------------------- bonus etiketleri
+// fut.gg'nin önerdiği dizilimler (kart özellikleriyle) ve fut.gg'nin hesapladığı taban/bonus puanı
+const FUTGG = JSON.parse(readFileSync(new URL('./fixtures/futgg-solutions.json', import.meta.url), 'utf8'));
+
+test('setScore: fut.gg çözümlerinin taban + bonus puanıyla birebir', () => {
+  for (const s of FUTGG.sets) {
+    const r = G.setScore(s.cards.map(G.solCard), FUTGG.tags);
+    assert.equal(r.base, s.base, s.name + ' taban');
+    assert.equal(r.bonus, s.bonus, s.name + ' bonus');
+  }
+});
+
+test('setScore: yalnız en yüksek 10 etiket sayılır', () => {
+  const laliga = FUTGG.sets.find((s) => s.name.includes('laliga-ea-sports'));
+  const r = G.setScore(laliga.cards.map(G.solCard), FUTGG.tags);
+  const active = r.tags.filter((x) => x.bonus > 0);
+  assert.ok(active.length > G.MAX_TAGS);
+  assert.equal(r.tags.filter((x) => x.on).length, G.MAX_TAGS);
+  const minOn = Math.min(...r.tags.filter((x) => x.on).map((x) => x.bonus));
+  assert.ok(active.filter((x) => !x.on).every((x) => x.bonus <= minOn));
+  // döküm: sayılmayanlar off, Türkçe adlar
+  const rows = G.tagRows(r.tags);
+  assert.equal(rows.filter((x) => x.off).length, active.length - G.MAX_TAGS);
+  assert.ok(rows.some((x) => x.name === 'Orta Saha Kontrolü'));
+});
+
+test('summarise: etiketler varsa bonus dahil, dizilim bonusa göre seçilir', () => {
+  // 2 kartlık set: en yüksek iki kart (100 + 95) yerine aynı ülkeden 100 + 94 → %10 bonusla daha yüksek
+  const tags = [{ id: 3, name: 'Same Nation', rule: { type: 'MAX_COUNT_ALL_SAME', attr: 'NATION', values: ['0'] }, tiers: [[2, 10]] }];
+  const set = mkSet({ required: 2, tags });
+  const defs = [def(1, 100, true, { nation: 7 }), def(2, 95, true, { nation: 8 }), def(3, 94, true, { nation: 7 })];
+  const s = G.summarise(set, defs);
+  assert.deepEqual(s.lineup.map((d) => d.def).sort(), [1, 3]);
+  assert.equal(s.base, 194);
+  assert.equal(s.bonus, 19);
+  assert.equal(s.score, 213);
+  // etiket yoksa eski davranış: ilk N taban puan
+  assert.equal(G.summarise(mkSet({ required: 2 }), defs).score, 195);
+});
+
+test('bestLineup: puanı düşük ama etiketi tamamlayan kartlar (aday sınırının dışında olsa da) seçilir', () => {
+  // 20 altın kart (70) varken 3 bronz kart (40, %80 Bronz) → 120 + 96 = 216 > 210
+  const tags = [{ id: 4, name: 'Bronze', rule: { type: 'COUNT', attr: 'LEVEL', values: ['bronze'] }, tiers: [[3, 80]] }];
+  const set = mkSet({ required: 3, tags });
+  const defs = [...Array.from({ length: 20 }, (_, i) => def(100 + i, 70, true, { r: 80 })), ...[1, 2, 3].map((i) => def(i, 40, true, { r: 60 }))];
+  const s = G.summarise(set, defs);
+  assert.deepEqual(s.lineup.map((d) => d.def).sort(), [1, 2, 3]);
+  assert.equal(s.score, 216);
+  assert.equal(G.setScore(s.lineup, tags).total, s.live);
+});
+
+test('withAttrs: EA kartında olmayan holografik/mevki bilgisi katalogdan gelir', () => {
+  const set = mkSet({ sol: { cards: [[101, 101, 89, 3, 500, 1000, 1, 7, 13, 'LW/ST', 5, 4, 1]], tiers: [] } });
+  const [d] = G.withAttrs(set, [def(101, 500, true, { nation: 9 })]);
+  assert.equal(d.holo, true);
+  assert.deepEqual(d.pp, ['LW', 'ST']);
+  assert.equal(d.nation, 9);   // EA'nın değeri korunur
+  assert.equal(d.wf, 5);
+});
+
 test('gradeFor: eşik altında not yok, en üstte next yok', () => {
   const set = mkSet();
   assert.equal(G.gradeFor(set, 0).grade, null);
@@ -252,4 +312,38 @@ test('katalog: yapı ve tutarlılık', () => {
       assert.ok(t.idx.length <= s.required && t.idx.every((i) => i < s.sol.cards.length), s.slug + ':' + t.g + ' kart');
     }
   }
+});
+
+test('solveGrade: tam N kart, sendekiler bedava, bonusla daha ucuz dizilim, fut.gg kademesinden pahalı değil', () => {
+  // 3 kartlık set, C eşiği 300. Havuz: [def, base, ovr, rare, score, price, club, nation, league, ...]
+  const tags = [{ id: 3, name: 'Same Nation', rule: { type: 'MAX_COUNT_ALL_SAME', attr: 'NATION', values: ['0'] }, tiers: [[3, 20]] }];
+  const cards = [
+    [11, 11, 80, 1, 120, 900, 1, 7, 13], [12, 12, 80, 1, 120, 900, 1, 8, 13], [13, 13, 80, 1, 120, 900, 1, 9, 13],
+    [21, 21, 78, 1, 90, 300, 1, 7, 13], [22, 22, 78, 1, 90, 300, 1, 7, 13], [23, 23, 78, 1, 90, 300, 1, 7, 13],
+  ];
+  const set = mkSet({ required: 3, tags, sol: { cards, tiers: [{ g: 'C', tokens: 0, cost: 2700, idx: [0, 1, 2] }] } });
+  // sahiplik yok: 3 × 90 = 270 + %20 (aynı ülke) = 324 ≥ 300 → 900 coin (fut.gg 2700)
+  const p = G.solveGrade(set, 'C');
+  assert.equal(p.cards.length, 3);
+  assert.equal(p.need, 900);
+  assert.ok(p.sumSc >= 300 && p.sumBonus > 0);
+  assert.ok(p.need <= G.planFromTier(set, 'C').cost);
+  // sende 21 ve 22 var → yalnız 23 alınır (300)
+  const defs = [21, 22].map((d) => def(d, 90, true, { nation: 7, team: 1 }));
+  const q = G.solveGrade(set, 'C', defs);
+  assert.equal(q.missing, 1);
+  assert.equal(q.need, 300);
+  assert.equal(q.cards.filter((c) => c.col).length, 2);
+  // kümülatif token (fut.gg kademesi gibi)
+  assert.equal(G.solveGrade({ ...set, grades: grades(['D', 10, 2], ['C', 300, 3], ['B', 500, 5]) }, 'C').tokens, 5);
+});
+
+test('solveGrade: havuz N karttan azsa ya da eşik aşılamıyorsa ulaşılamaz', () => {
+  const set = mkSet({ required: 3, sol: { cards: [[1, 1, 80, 1, 100, 500], [2, 2, 80, 1, 100, 500]], tiers: [] } });
+  assert.ok(G.solveGrade(set, 'D').unreachable);
+  const set2 = mkSet({ required: 2, sol: { cards: [[1, 1, 80, 1, 100, 500], [2, 2, 80, 1, 100, 500]], tiers: [] } });
+  assert.equal(G.solveGrade(set2, 'D').need, 1000);
+  assert.ok(G.solveGrade(set2, 'C').unreachable);   // 200 < 300
+  // ilanı olmayan (canlı fiyat 0) ve fiyatsız kartlar havuza girmez
+  assert.ok(G.solveGrade(set2, 'D', null, { 1: 0 }).unreachable);
 });

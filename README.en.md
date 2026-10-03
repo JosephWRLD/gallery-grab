@@ -85,7 +85,7 @@ Problems, bugs or ideas: **Discord `yusuflnx`** (top right of the Gallery screen
 - **Sort / filter, Coins ↻, market badge:** cards already in your gallery get a "✓ Galeride" badge on the market (Turkish only).
 - **Catalog:** `data/gallery-sets.json` is built from fut.gg by `tools/build-gallery-sets.mjs`. GitHub Actions rebuilds it **every day at 18:00 UTC**. The extension fetches the new version on the first launch after 18:40 UTC; if the download fails it retries an hour later, and without a network it uses the bundled copy. A warning appears in the detail view if a set's prices are older than 2 days.
 
-**Known limit:** the grade and score shown here don't include in-game **bonus tags** (same club, first owner +500%, etc.), so the in-game grade can be higher. fut.gg solutions are calculated with bonuses, so a solution reaches its grade in-game even when "Score (solution / target)" looks below the target.
+**Score:** base score + the game's bonus tags (same club/nation/league, TOTW, holographic, position tags, etc.; the top 10 count). **Known limit:** the **First Owner** bonus (pack-pulled cards, +150–500%) is not in EA data, so sets with such cards can score higher in-game.
 
 </details>
 
