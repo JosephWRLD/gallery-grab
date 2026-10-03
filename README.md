@@ -85,7 +85,7 @@ Sorun, hata ya da öneri için: **Discord `yusuflnx`** (Galeri ekranının sağ 
 - **Sıralama / filtre, Coin ↻, pazar rozeti:** pazarda zaten toplanmış kartlara "✓ Galeride" rozeti gelir.
 - **Katalog:** `data/gallery-sets.json`, `tools/build-gallery-sets.mjs` ile fut.gg'den üretilir. GitHub Actions bunu **her gün 21:00'de (TR)** yeniler. Eklenti 21:40'tan sonra ilk açılışta yeni sürümü çeker; indirme başarısız olursa 1 saat sonra yeniden dener, ağ yoksa gömülü kopyayı kullanır. Setin fiyatları 2 günden eskiyse detayda uyarı çıkar.
 
-**Bilinen sınır:** Buradaki not ve puan, oyundaki **bonus etiketleri** (aynı kulüp, ilk sahip +%500 vb.) içermez; oyundaki not daha yüksek olabilir. fut.gg çözümleri bonuslarla hesaplanmıştır. Bu yüzden "Puan (çözüm / hedef)" hedefin altında görünse de çözüm oyunda o notu verir.
+**Puan:** taban puan + oyunun bonus etiketleri (aynı kulüp/ülke/lig, TOTW, holografik, mevki etiketleri vb.; en yüksek 10'u sayılır). **Bilinen sınır:** **İlk Sahip** bonusu (paketten çıkan kartlar, +%150–500) EA verisinde yok; bu kartları olan setlerde oyundaki puan daha yüksek olabilir.
 
 </details>
 

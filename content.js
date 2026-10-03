@@ -19,11 +19,14 @@ function onSessionMessage(payload) {
   const { sid, headers } = payload || {};
   const baseUrl = validBase(payload?.baseUrl) ? payload.baseUrl : null;
   if (!sid || typeof sid !== 'string') return;
-  const key = JSON.stringify([sid, headers, baseUrl]);
+  // hesap: yalnız kısa kimlik + ad (galeri verisi hesaba özel saklanır)
+  const a = payload?.acct;
+  const acct = a && /^[0-9A-Za-z_-]{1,32}$/.test(String(a.id)) ? { id: String(a.id), name: a.name ? String(a.name).slice(0, 40) : null } : null;
+  const key = JSON.stringify([sid, headers, baseUrl, acct]);
   if (key === lastKey && Date.now() - lastWrite < 60000) return;
   lastKey = key;
   lastWrite = Date.now();
-  const session = { sid, headers: headers || {}, baseUrl: baseUrl || null, capturedAt: Date.now() };
+  const session = { sid, headers: headers || {}, baseUrl: baseUrl || null, acct, capturedAt: Date.now() };
   try { chrome.storage.local.set({ session }); } catch (_) {}
 }
 

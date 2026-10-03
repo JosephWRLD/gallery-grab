@@ -5,7 +5,7 @@ import { prevPrice } from './lib/pricing.js';
 import { fetchSetDefs, diagnoseConcept, deepDiagnose } from './lib/gallery-api.js';
 import { loadCatalog, refreshCatalog } from './lib/catalog.js';
 import { checkUpdate } from './lib/update.js';
-import { summarise, applyFloors, floorScore, priceCandidates, cheapestFill, baseOf, syncEstimate, planFromTier, pickGrade, fmtDur, relistPrice, buyTargets, suspiciousPrice, MAX_CARD_DEFAULT, diagCrit, diagReport, diagOverview, diagSetList, diagScan, deepReport } from './lib/gallery.js';
+import { summarise, applyFloors, setRequests, floorScore, priceCandidates, cheapestFill, baseOf, syncEstimate, planFromTier, solveGrade, pickGrade, fmtDur, relistPrice, buyTargets, suspiciousPrice, MAX_CARD_DEFAULT, diagCrit, diagReport, diagOverview, diagSetList, diagScan, deepReport } from './lib/gallery.js';
 import { makeT, detectLang, localeOf } from './lib/i18n.js';
 
 // Galeri durum mesajlarının dili (Galeri ekranındaki TR/EN seçimi; yoksa tarayıcı dili)
@@ -22,6 +22,7 @@ const PROBE_MAX = 5;   // en ucuzu bulmak için en fazla arama sayısı
 const PAGE_MAX = 3;    // tam sürüm aranırken aynı fiyat aralığında bakılan en fazla sayfa
 const PAGE_FULL = 20;  // num=21 istenir; 20+ ilan = sayfa dolu (EA en çok 20 döndürse de güvenli taraf)
 const RETRY_MAX = 3;   // ilan başkası tarafından alınırsa yeniden deneme
+const RETRY_ROUNDS = 2;   // tüm kartlar bitince başkası aldığı / ilan bulunamadığı / hata verdiği için atlananlara dönüş turu
 const DEFAULT_RUN = { running: false, spent: 0, coins: null, text: '', level: 'idle', ts: 0 };
 const TP_MAX = 100;    // transfer listesi kapasitesi
 
@@ -408,10 +409,86 @@ async function saveSetDefs(set, defs, reqs = null) {
   const sum = summarise(set, defs);
   gallerySummary[set.id] = {
     collected: sum.collected, required: sum.required, total: sum.total,
-    score: sum.score, grade: sum.grade, earned: sum.earned,
+    score: sum.score, grade: sum.grade, earned: sum.earned, base: sum.base, bonus: sum.bonus,
     reqs: reqs ?? gallerySummary[set.id]?.reqs ?? null, at: Date.now(),
   };
   await chrome.storage.local.set({ [defsKey(set.id)]: { at: Date.now(), defs }, gallerySummary });
+}
+
+// Alınan kart satışa çıkıp satılınca EA isCollected'ı false yapar, ama oyunda notlandırılan derece düşmez.
+// Alımdan sonra beklenen puan (alınanlar toplanmış sayılarak, bonus dahil) setin en iyi puanı olarak saklanır.
+// defs yoksa kayıtlı eşitleme kullanılır.
+async function raiseFloor(set, defs, got) {
+  if (!got?.length) return;
+  if (!defs) defs = (await chrome.storage.local.get(defsKey(set.id)))[defsKey(set.id)]?.defs;
+  if (!defs) return;
+  const ids = new Set(got);
+  const live = summarise({ ...set, floor: 0 }, defs.map((d) => (ids.has(d.def) ? { ...d, col: true } : d))).live;
+  const { galleryGraded = {}, gallerySummary = {} } = await chrome.storage.local.get(['galleryGraded', 'gallerySummary']);
+  const g = galleryGraded[set.id] || {};
+  if (live <= (g.best || 0)) return;
+  galleryGraded[set.id] = { ...g, best: live };
+  set.floor = floorScore(set, galleryGraded[set.id]);
+  const sum = summarise(set, defs);
+  if (gallerySummary[set.id]) gallerySummary[set.id] = { ...gallerySummary[set.id], score: sum.score, grade: sum.grade, earned: sum.earned };
+  await chrome.storage.local.set({ galleryGraded, gallerySummary });
+}
+
+// Puan hesabı değişince (SUMMARY_V) ya da yeni katalog gelince özetler kayıtlı eşitlemelerden yeniden hesaplanır
+// (EA'ya istek yok). 2: bonus etiketleri.
+const SUMMARY_V = 2;
+async function recomputeSummaries(force = false) {
+  const { gallerySummaryV = 1 } = await chrome.storage.local.get('gallerySummaryV');
+  if (!force && gallerySummaryV >= SUMMARY_V) return;
+  const cat = await loadCat();
+  const { gallerySummary = {} } = await chrome.storage.local.get('gallerySummary');
+  const saved = await chrome.storage.local.get(cat.sets.map((x) => defsKey(x.id)));
+  for (const set of cat.sets) {
+    const defs = saved[defsKey(set.id)]?.defs;
+    if (!defs || !gallerySummary[set.id]) continue;
+    const sum = summarise(set, defs);
+    gallerySummary[set.id] = { ...gallerySummary[set.id], collected: sum.collected, score: sum.score, grade: sum.grade, earned: sum.earned, base: sum.base, bonus: sum.bonus };
+  }
+  await chrome.storage.local.set({ gallerySummary, gallerySummaryV: SUMMARY_V });
+}
+
+// ---------------------------------------------------------------- hesaba özel galeri verisi
+// galleryAcct = { id, name } — verisi şu an yüklü olan EA hesabı (inject.js → session.acct).
+// Hesap değişince eskisinin galeri verisi `acct:<id>` altına kaldırılır, yeninin kaydı geri yüklenir (yoksa boş başlar).
+// Fiyatlar, ayarlar, katalog ortak kalır.
+const ACCT_KEYS = ['galleryGraded', 'galleryToGrade', 'gallerySummary', 'galleryBuySpent', 'galleryBuys', 'galleryLevel'];
+const acctKey = (id) => 'acct:' + id;
+let acctQueue = Promise.resolve();
+const checkAccount = (acct) => (acctQueue = acctQueue.then(() => switchAccount(acct)).catch(() => {}));
+async function switchAccount(acct) {
+  const id = acct?.id ? String(acct.id) : null;
+  if (!id) return;
+  const all = await chrome.storage.local.get(null);
+  const cur = all.galleryAcct || null;
+  if (cur?.id === id) {
+    if (acct.name && acct.name !== cur.name) await chrome.storage.local.set({ galleryAcct: { id, name: acct.name } });
+    return;
+  }
+  if (!cur) return chrome.storage.local.set({ galleryAcct: { id, name: acct.name || null } });   // ilk tanıma: mevcut veri bu hesabın
+  if (all.galleryRun?.running) await stop(T('bg.stopped'), 'idle');
+  const mine = (k) => ACCT_KEYS.includes(k) || k.startsWith('gdefs:');
+  const snap = {};
+  for (const [k, v] of Object.entries(all)) if (mine(k)) snap[k] = v;
+  const next = all[acctKey(id)] || {};
+  await chrome.storage.local.set({ [acctKey(cur.id)]: { name: cur.name, at: Date.now(), data: snap } });
+  await chrome.storage.local.remove([...Object.keys(snap), acctKey(id)]);
+  await chrome.storage.local.set({ ...(next.data || {}), galleryAcct: { id, name: acct.name || next.name || null } });
+  const name = acct.name || next.name || id;
+  await status(next.data ? T('bg.acctBack', { name }) : T('bg.acctNew', { name }), next.data ? 'ok' : 'warn');
+}
+chrome.storage.onChanged.addListener((c, area) => { if (area === 'local' && c.session?.newValue?.acct) checkAccount(c.session.newValue.acct); });
+chrome.storage.local.get('session').then(({ session }) => session?.acct && checkAccount(session.acct)).catch(() => {});
+
+// Bu hesaptaki tüm "oyundaki derece" kayıtları (elle seçilen + eşitlemelerde görülen en yüksek) silinir,
+// özetler kayıtlı eşitlemelerden yeniden hesaplanır (EA'ya istek yok)
+async function resetGraded() {
+  await chrome.storage.local.remove('galleryGraded');
+  await recomputeSummaries(true);
 }
 
 async function syncSets(my, ids) {
@@ -424,9 +501,15 @@ async function syncSets(my, ids) {
   let n = 0;
   let failed = 0;
   let streak = 0;   // art arda başarısız set (sekme kapandıysa her set düşer → dur)
+  // galeri ekranındaki eşitleme animasyonu için: sıra, o anki set ve istek ilerlemesi (galleryRun.sync)
+  const sync = { ids: sets.map((s) => s.id), done: [], fail: [], cur: null, req: 0, reqN: 0, t0: started, end: 0 };
+  const syncPatch = (p = {}) => (my === token ? patchRun({ sync: Object.assign(sync, p) }) : null);
+  await syncPatch();
+  const pageGap = async () => { await pause(); await syncPatch(); };   // sayfa arası: istek sayacını yansıt
   for (const [i, set] of sets.entries()) {
     if (my !== token) return;
     const left = syncEstimate(sets.slice(i), summary, secPerReq).sec;
+    await syncPatch({ cur: set.id, req: 0, reqN: setRequests(set, summary[set.id]), left: Math.round(left) });
     await status(T('bg.syncing', { name: set.name, i: i + 1, n: sets.length, left: fmtDur(left, T) }), 'ok', my);
     let reqs = 0;
     let defs = null;
@@ -434,8 +517,9 @@ async function syncSets(my, ids) {
     // Web App anlık meşgulse / zaman aşımı: 2 sn sonra bir kez daha dene, olmazsa seti atla
     for (let attempt = 0; attempt < 2 && !defs && my === token; attempt++) {
       try {
-        defs = await fetchSetDefs(set.filter, pause, (ms) => {
+        defs = await fetchSetDefs(set.filter, pageGap, (ms) => {
           reqs++;
+          sync.req = reqs;
           secPerReq = secPerReq ? secPerReq * 0.8 + (ms / 1000) * 0.2 : ms / 1000;   // hareketli ortalama
         });
       } catch (err) {
@@ -452,14 +536,17 @@ async function syncSets(my, ids) {
       await chrome.storage.local.set({ gallerySyncStats: { secPerReq } });
       n++;
       streak = 0;
+      await syncPatch({ done: [...sync.done, set.id], cur: null });
     } else {
       failed++;
+      await syncPatch({ fail: [...sync.fail, set.id], cur: null });
       const e = lastErr?.message || T('error');
       if (++streak >= 3) { notify(T('bg.haltTitle'), e); return stop(T('bg.syncFail', { name: set.name, e }) + T('bg.syncFailN', { n: failed }), 'error', my); }
       await status(T('bg.syncFail', { name: set.name, e }), 'warn', my);
     }
     await setGap();
   }
+  await syncPatch({ end: Date.now() });
   if (my === token) await stop(T('bg.syncDone', { n, m: sets.length, d: fmtDur((Date.now() - started) / 1000, T) }) + (failed ? T('bg.syncFailN', { n: failed }) : ''), failed ? 'warn' : 'ok', my);
 }
 
@@ -548,37 +635,66 @@ async function buyMissing(my, setId) {
   const { settings } = await load();
   // fiyatlar "Fiyatla"dan geliyor → canlı fiyat sayılır (sınır = canlı × 1,25)
   const cards = plan.pick.map((d) => ({ def: d.def, name: d.name, rare: d.rare, price: prices[d.def], live: prices[d.def] }));
-  return buyAndFinish(my, set, buyTargets(cards, settings.maxCard));
+  return buyAndFinish(my, set, buyTargets(cards, settings.maxCard), plan.pick);
 }
 
 // fut.gg'nin seçilen not için önerdiği çözümdeki (hangi kartlar), henüz toplanmamış kartları
 // pazardaki GÜNCEL en ucuz fiyattan alır. fut.gg fiyatı yalnız özel sürümleri bulmak için alt sınır ipucu.
-async function buyPlan(my, setId, grade) {
+// src: 'futgg' | 'gg' (Gallery Grab çözücü); want: ekranda onaylanan eksik kartlar (değiştiyse almaz — plan kilidi)
+async function buyPlan(my, setId, grade, src = 'futgg', want = null) {
   const set = await setById(setId);
   if (set.filter?.unsupported) return stop(T('bg.unsupported', { name: set.name }), 'warn', my);
   const { [defsKey(setId)]: saved } = await chrome.storage.local.get(defsKey(setId));
   if (!saved) return stop(T('bg.needSync'), 'warn', my);
-  const plan = planFromTier(set, grade, saved.defs, freshPrices(await loadPrices()));
+  const live = freshPrices(await loadPrices());
+  let plan = src === 'gg' ? solveGrade(set, grade, saved.defs, live) : planFromTier(set, grade, saved.defs, live);
+  if (plan?.unreachable) plan = null;
   if (!plan) return stop(T('bg.noSol', { name: set.name, g: grade }), 'warn', my);
   const todo = plan.cards.filter((c) => !c.col);
+  if (want && (want.length !== todo.length || todo.some((c) => !want.includes(c.def)))) return stop(T('bg.planChanged', { name: set.name, g: grade }), 'warn', my);
   if (!todo.length) return stop(T('bg.allOwned', { name: set.name }), 'ok', my);
   const { settings } = await load();
-  return buyAndFinish(my, set, buyTargets(todo, settings.maxCard));
+  return buyAndFinish(my, set, buyTargets(todo, settings.maxCard), todo);
 }
+
+// Galeri ekranındaki alım animasyonu için (galleryRun.buy): set sırası, o anki set ve kartlarının durumu
+// kart st: 'q' sırada | 'find' aranıyor | 'ok' alındı (p fiyat) | 'skip' atlandı | 'fail' hata
+function buyFx(my, ids) {
+  const buy = { ids, done: [], fail: [], cur: null, cset: null, cards: [], spent: 0, bought: 0, t0: Date.now(), end: 0 };
+  const patch = (p = {}) => (my === token ? patchRun({ buy: Object.assign(buy, p) }) : null);
+  const card = (def, p, extra = {}) => { Object.assign(buy.cards.find((c) => c.def === def) || {}, p); return patch(extra); };
+  const close = (id, ok) => patch({ [ok ? 'done' : 'fail']: [...buy[ok ? 'done' : 'fail'], id], cur: null });
+  return { buy, patch, card, close };
+}
+const fxCards = (targets, plan = []) => targets.map((t) => ({ def: t.def, name: t.name, base: baseOf(t.def), r: plan.find((c) => c.def === t.def)?.r || 0, rare: t.rare, st: 'q', p: 0 }));
 
 // Kartları sırayla alır; bütçe galeriye özel sayaçla (galleryBuySpent) kontrol edilir.
 // Dönen: { bought, notes, halt } — halt: 'budget' | 'coins' | 'stopped' | 'error' (döngü devam etmemeli)
 // ctx = { tp }: transfer listesindeki ilan sayısı (null = izlenmiyor). halt 'tpfull' = liste doldu.
+// Başkası aldığı, ilan olmadığı ya da hata verdiği için atlanan kartlara, hepsi bitince RETRY_ROUNDS tur daha dönülür
+// (fiyat sınırı / şüpheli fiyat yüzünden atlananlara dönülmez). Notları yalnız son turda kalanlar için yazılır.
 async function buyCards(my, set, targets, label = '', ctx = {}) {
   let bought = 0;
   const notes = [];
-  for (const [i, t] of targets.entries()) {
+  const fx = ctx.fx || null;
+  let list = targets;
+  for (let round = 0; round <= RETRY_ROUNDS && list.length; round++) {
+  const last = round === RETRY_ROUNDS;
+  const again = [];
+  if (round) {
+    await status(label + T('bg.retryRound', { n: list.length, r: round, m: RETRY_ROUNDS }), 'ok', my);
+    await sleep(rnd(4000, 8000));   // ilanlar yenilensin
+    if (my !== token) return { bought, notes, halt: 'stopped' };
+  }
+  for (const [i, t] of list.entries()) {
     if (my !== token) return { bought, notes, halt: 'stopped' };
     if (ctx.tp != null && ctx.tp >= TP_MAX) return { bought, notes: [...notes, T('bg.tpFull', { n: ctx.tp })], halt: 'tpfull' };
     const { settings } = await load();
     try {
-      await status(label + T('bg.search', { name: t.name, i: i + 1, n: targets.length }), 'ok', my);
+      await status(label + T('bg.search', { name: t.name, i: i + 1, n: list.length }), 'ok', my);
+      await fx?.card(t.def, { st: 'find' });
       let done = false;
+      let retry = false;   // bu turda atlandı ama sonra yeniden denenebilir
       const noted = notes.length;
       for (let attempt = 1; attempt <= RETRY_MAX && !done; attempt++) {
         const tr = {};
@@ -588,7 +704,9 @@ async function buyCards(my, set, targets, label = '', ctx = {}) {
           // (bir sonraki denemede sınır bu fiyatın %25 fazlası olur)
           const real = t.range?.maxb ? await findCheapest(baseOf(t.def), t.def, t.range.minb ? { minb: t.range.minb } : null, null, t.rare) : null;
           await savePrice(t.def, real ? real.buyNowPrice : 0);
-          notes.push(real ? T('bg.overCap', { name: t.name, p: fmt(real.buyNowPrice), c: fmt(t.range.maxb) }) : T('bg.noListing', { name: t.name }));
+          if (real) notes.push(T('bg.overCap', { name: t.name, p: fmt(real.buyNowPrice), c: fmt(t.range.maxb) }));
+          else if (last) notes.push(T('bg.noListing', { name: t.name }));
+          else retry = true;
           break;
         }
         const price = a.buyNowPrice;
@@ -611,7 +729,9 @@ async function buyCards(my, set, targets, label = '', ctx = {}) {
           galleryBuys.push({ n: t.name, d: t.def, p: price, g: t.gg || 0, s: set.name, at: Date.now() });
           await chrome.storage.local.set({ galleryBuySpent: sp + price, galleryBuys: galleryBuys.slice(-200) });
           await patchRun({ coins: parseCoins(r) ?? (cur.run.coins != null ? cur.run.coins - price : null) });
+          await fx?.card(t.def, { st: 'ok', p: price }, { spent: fx.buy.spent + price, bought: fx.buy.bought + 1 });
           bought++;
+          (ctx.got ||= []).push(t.def);
           done = true;
           const ab = await afterBuy(it.id, price, settings, t.ref);
           await status(label + T('bg.bought', { name: t.name, p: fmt(price), x: ab.note }), 'ok', my);
@@ -622,13 +742,18 @@ async function buyCards(my, set, targets, label = '', ctx = {}) {
           throw e;
         }
       }
-      if (!done && notes.length === noted) notes.push(T('bg.sniped', { name: t.name }));
+      if (!done && !retry && notes.length === noted) { if (last) notes.push(T('bg.sniped', { name: t.name })); else retry = true; }
+      if (retry) { again.push(t); await fx?.card(t.def, { st: 'again' }); }
+      else if (!done) await fx?.card(t.def, { st: 'skip' });
     } catch (err) {
       const why = stopReason(err);
       if (why) { notify(T('bg.haltTitle'), why); await stop(why, 'error', my); return { bought, notes, halt: 'error' }; }
-      notes.push(`${t.name}: ${err?.message || T('error')}`);
+      if (last) { notes.push(`${t.name}: ${err?.message || T('error')}`); await fx?.card(t.def, { st: 'fail' }); }
+      else { again.push(t); await fx?.card(t.def, { st: 'again' }); }
     }
     await sleep(rnd(1000, 2500));
+  }
+  list = again;
   }
   return { bought, notes, halt: null };
 }
@@ -638,13 +763,20 @@ async function refreshCoinsRun() {
 }
 
 // Tek set: al + bitir
-async function buyAndFinish(my, set, targets) {
+async function buyAndFinish(my, set, targets, plan = []) {
   await refreshCoinsRun();
   const ctx = await buyContext();
   if (ctx.full) return stop(T('bg.tpFull', { n: ctx.tp }), 'warn', my);
+  ctx.got = [];
+  ctx.fx = buyFx(my, [set.id]);
+  await ctx.fx.patch({ cur: set.id, cset: set.id, cards: fxCards(targets, plan) });
   const r = await buyCards(my, set, targets, '', ctx);
-  if (r.halt === 'stopped' || r.halt === 'error') { if (r.bought) await markToGrade([set.id]); return; }
-  return finishBuy(my, set, r.bought, r.notes, r.halt);
+  if (r.halt === 'stopped' || r.halt === 'error') {
+    await ctx.fx.close(set.id, false);
+    if (r.bought) { await markToGrade([set.id]); await raiseFloor(set, null, ctx.got); }
+    return;
+  }
+  return finishBuy(my, set, r.bought, r.notes, r.halt, ctx.got, ctx.fx);
 }
 
 // Kart alınan setler oyunda notlandırılmalı (Web App notlandıramıyor): { setId: zaman }
@@ -687,11 +819,14 @@ async function buyBatch(my, items) {
   let total = 0;
   let halt = null;
   const done = [];
+  items = items.filter((it) => cat.sets.some((x) => x.id === it.setId));
+  const fx = buyFx(my, items.map((it) => it.setId));
+  await fx.patch();
   for (const [i, it] of items.entries()) {
     if (my !== token) return;
     const set = cat.sets.find((x) => x.id === it.setId);
-    if (!set) continue;
-    if (set.filter?.unsupported) { done.push(T('bg.unsupported', { name: set.name })); continue; }
+    await fx.patch({ cur: set.id, cards: [] });
+    if (set.filter?.unsupported) { done.push(T('bg.unsupported', { name: set.name })); await fx.close(set.id, false); continue; }
     const label = `[${i + 1}/${items.length}] ${set.name} · `;
     const { [defsKey(set.id)]: saved } = await chrome.storage.local.get(defsKey(set.id));
     let defs = saved?.defs || null;
@@ -701,7 +836,7 @@ async function buyBatch(my, items) {
       if (why) { notify(T('bg.haltTitle'), why); return stop(why, 'error', my); }
     }
     if (my !== token) return;
-    if (!defs) { done.push(T('bg.unsyncedSkip', { name: set.name })); continue; }
+    if (!defs) { done.push(T('bg.unsyncedSkip', { name: set.name })); await fx.close(set.id, false); continue; }
     let grade = it.grade;
     // Çoklu seçim (auto): o anki coin/bütçe ve CANLI fiyatlarla hedeften aşağı ulaşılabilir en yüksek derece.
     // Seçilen derecenin kartları fiyatlanır, karar yeniden verilir; derece değişirse yenisi de fiyatlanır (en çok 3 derece).
@@ -718,23 +853,34 @@ async function buyBatch(my, items) {
         seen.add(p.g);
         if (!(await priceFresh(my, set, p.g, defs, label))) return;
       }
-      if (!p.g) { done.push(T('bg.autoNone.' + p.why, { name: set.name })); continue; }
+      if (!p.g) { done.push(T('bg.autoNone.' + p.why, { name: set.name })); await fx.close(set.id, true); continue; }
       if (p.fell) done.push(T('bg.autoFell', { name: set.name, from: it.grade, to: p.g }));
       grade = p.g;
     }
     const plan = planFromTier(set, grade, defs, freshPrices(await loadPrices()));
     const todo = plan ? plan.cards.filter((c) => !c.col) : [];
-    if (!todo.length) { if (plan) done.push(T('bg.autoReady', { name: set.name, g: grade })); continue; }
+    if (!todo.length) { if (plan) done.push(T('bg.autoReady', { name: set.name, g: grade })); await fx.close(set.id, true); continue; }
     const { settings } = await load();
-    const r = await buyCards(my, set, buyTargets(todo, settings.maxCard), label, ctx);
+    ctx.got = [];
+    ctx.fx = fx;
+    const targets = buyTargets(todo, settings.maxCard);
+    await fx.patch({ cset: set.id, cards: fxCards(targets, todo) });
+    const r = await buyCards(my, set, targets, label, ctx);
     total += r.bought;
-    if (r.halt === 'stopped' || r.halt === 'error') { if (r.bought) await markToGrade([set.id]); return; }
-    try { await saveSetDefs(set, await fetchSetDefs(set.filter, pause)); } catch (_) {}   // alınanlar toplandı mı
-    if (r.bought) await markToGrade([set.id]);
+    if (r.halt === 'stopped' || r.halt === 'error') {
+      await fx.close(set.id, false);
+      if (r.bought) { await markToGrade([set.id]); await raiseFloor(set, defs, ctx.got); }
+      return;
+    }
+    let after = null;
+    try { after = await fetchSetDefs(set.filter, pause); await saveSetDefs(set, after); } catch (_) {}   // alınanlar toplandı mı
+    if (r.bought) { await markToGrade([set.id]); await raiseFloor(set, after || defs, ctx.got); }
     done.push(...r.notes.filter((x) => !done.includes(x)));
+    await fx.close(set.id, true);
     if (r.halt) { halt = r.halt; break; }
   }
   if (my !== token) return;
+  await fx.patch({ end: Date.now() });
   const msg = T('bg.planDone', { n: total }) + (done.length ? ' · ' + done.slice(0, 3).join(' · ') + (done.length > 3 ? ` (+${done.length - 3})` : '') : '') + (total ? T('bg.gradeHint') : '');
   notify('Gallery Grab', msg);
   await stop(msg, halt ? 'warn' : 'ok', my);
@@ -795,16 +941,18 @@ async function syncPrice(my, setId, grade) {
   await stop((r.changes.length ? `${head} · ${r.changes.slice(0, 4).join(' · ')}` : head + T('bg.liveSame')) + trail, 'ok', my);
 }
 
-async function finishBuy(my, set, bought, notes, halt = null) {
+async function finishBuy(my, set, bought, notes, halt = null, got = [], fx = null) {
   if (my !== token) return;
   // Alınanların toplandığını EA'dan doğrula
-  try { await saveSetDefs(set, await fetchSetDefs(set.filter, pause)); } catch (_) {}   // alınanlar toplandı mı
-  if (bought) await markToGrade([set.id]);
+  let after = null;
+  try { after = await fetchSetDefs(set.filter, pause); await saveSetDefs(set, after); } catch (_) {}   // alınanlar toplandı mı
+  if (bought) { await markToGrade([set.id]); await raiseFloor(set, after, got); }
   const { gallerySummary = {} } = await chrome.storage.local.get('gallerySummary');
   const s = gallerySummary[set.id];
   const note = notes.length ? ' · ' + notes.slice(0, 3).join(' · ') + (notes.length > 3 ? ` (+${notes.length - 3})` : '') : '';
   const msg = T('bg.done1', { name: set.name, n: bought }) + note + (s ? T('bg.done1b', { c: s.collected, r: s.required, g: s.grade || '-' }) : '') + (bought ? T('bg.gradeHint') : '');
   notify('Gallery Grab', msg);
+  if (fx) { await fx.close(set.id, true); await fx.patch({ end: Date.now() }); }
   await stop(msg, halt || notes.length ? 'warn' : 'ok', my);
 }
 
@@ -812,7 +960,7 @@ async function startTask(fn, label) {
   const { session } = await chrome.storage.local.get('session');
   if (!session?.sid) { await status(T('bg.noSession'), 'error'); return { ok: false }; }
   const my = ++token;
-  await patchRun({ running: true, text: label, level: 'ok' });
+  await patchRun({ running: true, text: label, level: 'ok', sync: null, buy: null });   // sync/buy: yalnız eşitleme/alım görevi doldurur
   // Görev beklenmedik hata fırlatırsa "çalışıyor" durumunda takılı kalmasın
   Promise.resolve().then(() => fn(my)).catch((e) => stop(T('bg.taskFail', { e: e?.message || String(e) }), 'error', my));
   return { ok: true };
@@ -879,7 +1027,7 @@ chrome.runtime.onMessage.addListener((msg, _s, reply) => {
       case 'syncSets': return startTask((my) => syncSets(my, msg.ids || []), T('bg.syncStart'));
       case 'priceSet': return startTask((my) => priceSet(my, msg.id), T('bg.priceStart'));
       case 'buyMissing': return startTask((my) => buyMissing(my, msg.id), T('bg.missingStart'));
-      case 'buyPlan': return startTask((my) => buyPlan(my, msg.id, msg.grade), T('bg.buyStart'));
+      case 'buyPlan': return startTask((my) => buyPlan(my, msg.id, msg.grade, msg.src, msg.defs || null), T('bg.buyStart'));
       case 'syncPrice': return startTask((my) => syncPrice(my, msg.id, msg.grade), T('bg.syncStart'));
       case 'setLang': setLangBg(msg.value); await chrome.storage.local.set({ galleryLang: LANG }); return { ok: true };
       case 'buyBatch': return startTask((my) => buyBatch(my, msg.items || []), T('bg.planStart'));
@@ -908,6 +1056,7 @@ chrome.runtime.onMessage.addListener((msg, _s, reply) => {
         await chrome.storage.local.set({ galleryToGrade });
         return { ok: true };
       }
+      case 'resetGraded': await resetGraded(); return { ok: true };
       case 'setGraded': {   // value: 'D'…'S' = oyundaki derece, null = otomatik (eşitlemelerde görülen en yüksek); reset: kayıt silinir
         const { galleryGraded = {} } = await chrome.storage.local.get('galleryGraded');
         if (msg.reset) delete galleryGraded[msg.id];
@@ -975,6 +1124,7 @@ chrome.runtime.onMessage.addListener((msg, _s, reply) => {
         // Galeri ekranı açılınca: günlük güncelleme kontrolü + görsel kökü için sözlük
         let info = null;
         try { info = await refreshCatalog(!!msg.force); } catch (e) { if (msg.force) return { ok: false, error: e.message }; }
+        await recomputeSummaries(!!info?.changed).catch(() => {});
         metaOrNull();
         return { ok: true, info };
       }

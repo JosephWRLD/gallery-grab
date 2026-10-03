@@ -2,7 +2,7 @@
 (() => {
   const SRC = 'fc-galeri';
   const IGNORED = new Set(['content-type', 'accept', 'x-http-method-override']);
-  const state = { sid: null, headers: {}, baseUrl: null };
+  const state = { sid: null, headers: {}, baseUrl: null, acct: null };
   let lastSent = '';
 
   const baseFrom = (u) => {
@@ -12,11 +12,31 @@
 
   const emit = () => {
     if (!state.sid) return;
-    const key = JSON.stringify([state.sid, state.headers, state.baseUrl]);
+    const key = JSON.stringify([state.sid, state.headers, state.baseUrl, state.acct]);
     if (key === lastSent) return;
     lastSent = key;
-    window.postMessage({ source: SRC, type: 'session', payload: { sid: state.sid, headers: state.headers, baseUrl: state.baseUrl } }, '*');
+    window.postMessage({ source: SRC, type: 'session', payload: { sid: state.sid, headers: state.headers, baseUrl: state.baseUrl, acct: state.acct } }, '*');
   };
+
+  // Hangi EA hesabı (galeri verisi hesaba özel saklanır): Web App açılışta usermassinfo ister → userInfo.personaId.
+  // Yedek: Web App'in kullanıcı nesnesi (alan adları sürüme göre değişebilir).
+  const setAcct = (id, name) => {
+    if (id == null || id === '' || id === 0) return;
+    const a = { id: String(id), name: name ? String(name) : null };
+    if (state.acct?.id === a.id && state.acct?.name === a.name) return;
+    state.acct = a;
+    emit();
+  };
+  function readMassInfo() {
+    try { const u = JSON.parse(this.responseText)?.userInfo; if (u) setAcct(u.personaId, u.personaName); } catch (_) {}
+  }
+  function acctFromApp() {
+    try {
+      const u = window.services?.User?.getUser?.();
+      const p = u?.getSelectedPersona?.() || u?.selectedPersona || null;
+      setAcct(p?.id ?? p?.personaId ?? u?.personaId ?? u?.selectedPersonaId ?? null, p?.name ?? p?.personaName ?? u?.personaName ?? null);
+    } catch (_) {}
+  }
 
   const ingest = (url, headers) => {
     if (!/\/ut\/game\//.test(String(url))) return;
@@ -46,6 +66,7 @@
     if (this.__fcg) {
       ingest(this.__fcg.url, this.__fcg.headers);
       if (/\/ut\/game\/[^?]*\/(transfermarket|tradepile|watchlist)\b/.test(String(this.__fcg.url))) this.addEventListener('load', readCollected);
+      if (/\/ut\/game\/[^?]*\/usermassinfo\b/.test(String(this.__fcg.url))) this.addEventListener('load', readMassInfo);
     }
     return xSend.apply(this, a);
   };
@@ -118,6 +139,7 @@
         for (const e of performance.getEntriesByType('resource')) { const b = baseFrom(e.name); if (b) { state.baseUrl = b; lastSent = ''; } }
       }
       if (id && id !== state.sid) state.sid = id;
+      if (!state.acct) acctFromApp();
       emit();
     } catch (_) {}
   }, 5000);

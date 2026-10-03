@@ -10,10 +10,14 @@
     --gD:#e0772e; --gC:#c9d1dc; --gB:#f5c518; --gA:#3d9bff; --gS:#a66bff;
   }
   * { box-sizing:border-box; }
+  /* kaydırma çubuğunun yeri hep ayrılır: çok setli lige geçince çubuk çıksa da sayfa / alt bar sola kaymaz */
+  html { scrollbar-gutter:stable; }
   body { margin:0; min-height:100vh; background:radial-gradient(1200px 600px at 10% -10%, #1b2d55 0%, transparent 60%), linear-gradient(160deg,#0b1322 0%,#0c2230 60%,#0b3b3a 100%); background-attachment:fixed; color:var(--tx); font:13px/1.4 system-ui,"Segoe UI",sans-serif; }
   main { max-width:1180px; margin:0 auto; padding:18px 16px 90px; }
   .intro { color:var(--mut); font-size:12px; margin:0 0 10px; }
   .top { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  /* "Sadece {lig}": sabit genişlik — uzun lig adı (Ligue 1 McDonald's) lig çubuğunu daraltmasın; tam ad title'da */
+  #syncTab { width:170px; flex:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .tabs { flex:1; min-width:0; display:flex; gap:4px; overflow-x:auto; background:rgba(8,14,26,.8); border:1px solid var(--line); border-radius:10px; padding:4px; scrollbar-width:thin; }
   .tabs button { flex:none; background:none; border:0; color:var(--tx); font-weight:700; padding:7px 14px; border-radius:7px; cursor:pointer; white-space:nowrap; opacity:.85; }
   .tabs button:hover { opacity:1; background:rgba(255,255,255,.05); }
@@ -74,6 +78,14 @@
   .lg.D b { color:var(--gD); } .lg.C b { color:var(--gC); } .lg.B b { color:var(--gB); } .lg.A b { color:var(--gA); } .lg.S b { color:var(--gS); }
   .prog { height:6px; background:#1a2740; border-radius:4px; overflow:hidden; margin-top:6px; }
   .prog i { display:block; height:100%; background:linear-gradient(90deg,var(--grn),var(--acc)); }
+  details.tags { margin-top:6px; font-size:12px; }
+  details.tags summary { cursor:pointer; color:var(--mut); }
+  .tagl { display:grid; gap:2px; margin:6px 0 4px; }
+  .tagl > div { display:grid; grid-template-columns:1fr auto auto; gap:10px; align-items:baseline; }
+  .tagl small { color:var(--mut); }
+  .tagl b { color:var(--grn); min-width:56px; text-align:right; }
+  .tagl .off { opacity:.45; }
+  .tagl .off b { text-decoration:line-through; }
   .plan { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:12px 0; }
   .plan .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; align-items:center; }
   .cards h3 { font-size:12px; color:var(--mut); text-transform:uppercase; letter-spacing:.04em; margin:16px 0 6px; }
@@ -149,6 +161,17 @@
   .gt:hover { background:rgba(255,255,255,.05); }
   .gt.on { background:rgba(245,197,24,.08); box-shadow:inset 0 -2px 0 var(--acc); }
   .gt.na { opacity:.4; cursor:default; }
+  .gt.gg .c::after { content:' ◆'; color:var(--grn); font-size:9px; }
+  .srcsw { display:flex; gap:6px; align-items:stretch; flex-wrap:wrap; margin:0 0 10px; }
+  .srcsw .l { align-self:center; color:var(--mut); font-size:12px; }
+  .srcsw button { display:flex; flex-direction:column; align-items:flex-start; gap:1px; padding:6px 12px; border-radius:10px; border:1px solid var(--line); background:rgba(255,255,255,.02); color:var(--tx); cursor:pointer; font-size:12px; min-width:130px; }
+  .srcsw button b { font-size:12.5px; }
+  .srcsw button.on { border-color:var(--acc); background:rgba(245,197,24,.08); box-shadow:inset 0 0 0 1px var(--acc); }
+  .srcsw button:disabled { opacity:.4; cursor:default; }
+  .srcsw button i { font-style:normal; color:var(--grn); font-size:11px; font-weight:700; }
+  .ggline { margin:0 0 10px; padding:8px 10px; border-radius:8px; background:rgba(47,208,138,.07); border:1px solid rgba(47,208,138,.25); font-size:12.5px; }
+  .ggline b { color:var(--acc); }
+  .note.warn { color:var(--warn); }
   .gt b { display:block; font-size:15px; }
   .gt .c { font-size:11.5px; color:var(--tx); } .gt .t { font-size:10.5px; color:var(--mut); }
   .gt.got b::after { content:' ✓'; color:var(--grn); font-size:11px; }
@@ -188,6 +211,85 @@
   .srow button:hover { color:var(--err); }
   .selbar .ft { display:flex; gap:8px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-top:8px; }
   .selbar .ft .note { flex:1; min-width:220px; }
+  /* eşitleme animasyonu: üst şerit + ızgaradaki kartlar */
+  .syncfx { position:sticky; top:6px; z-index:5; box-shadow:0 8px 24px rgba(0,0,0,.45); margin:10px 0 6px; padding:10px 12px 11px; border:1px solid rgba(245,197,24,.35); border-radius:12px; background:linear-gradient(180deg,var(--card2),var(--card)); overflow:hidden; animation:fxin .35s ease-out; }
+  .syncfx::before { content:''; position:absolute; inset:0; background:linear-gradient(100deg,transparent 35%,rgba(245,197,24,.07) 50%,transparent 65%); background-size:300% 100%; animation:fxsweep 2.4s linear infinite; pointer-events:none; }
+  .syncfx.end { border-color:rgba(47,208,138,.45); } .syncfx.stopped { border-color:rgba(240,180,60,.45); }
+  .syncfx.end::before, .syncfx.stopped::before { display:none; }
+  .syncfx .hd { position:relative; display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:13px; }
+  .syncfx .ic { width:14px; height:14px; border:2px solid rgba(245,197,24,.25); border-top-color:var(--acc); border-radius:50%; animation:fxspin .8s linear infinite; flex:none; box-sizing:border-box; }
+  .syncfx.end .ic { border:0; border-radius:0; animation:fxin .4s ease-out; background:var(--grn); -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.2 11.6 2.7 8.1l1.4-1.4 2.1 2.1 5.7-5.7 1.4 1.4z'/%3E%3C/svg%3E") center/contain no-repeat; mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.2 11.6 2.7 8.1l1.4-1.4 2.1 2.1 5.7-5.7 1.4 1.4z'/%3E%3C/svg%3E") center/contain no-repeat; }
+  .syncfx.stopped .ic { border-color:var(--warn); animation:none; }
+  .syncfx .ttl { font-weight:800; } .syncfx.end .ttl { color:var(--grn); } .syncfx.stopped .ttl { color:var(--warn); }
+  .syncfx .ct { color:var(--tx); font-variant-numeric:tabular-nums; }
+  .syncfx .now { color:var(--acc); text-decoration:none; border-bottom:1px dotted rgba(245,197,24,.5); }
+  .syncfx .left { color:var(--mut); }
+  .syncfx .fol { display:flex; gap:5px; align-items:center; color:var(--mut); font-size:12px; cursor:pointer; }
+  .syncfx .fol input { width:auto; height:auto; margin:0; padding:0; accent-color:var(--acc); }
+  .syncfx .pb { position:relative; height:6px; margin:9px 0 8px; background:#0a1220; border-radius:99px; overflow:hidden; }
+  .syncfx .pb i { position:relative; display:block; height:100%; width:0; border-radius:99px; background:linear-gradient(90deg,#d9a90c,var(--acc),#ffe27a); box-shadow:0 0 12px rgba(245,197,24,.55); transition:width .7s cubic-bezier(.2,.8,.2,1), background .4s; overflow:hidden; }
+  .syncfx .pb i::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent); background-size:50% 100%; background-repeat:no-repeat; animation:fxgloss 1.3s linear infinite; }
+  .syncfx.end .pb i { background:var(--grn); box-shadow:0 0 12px rgba(47,208,138,.5); } .syncfx.stopped .pb i { background:var(--warn); box-shadow:none; }
+  .syncfx.end .pb i::after, .syncfx.stopped .pb i::after { display:none; }
+  .syncfx .dots { position:relative; display:flex; flex-wrap:wrap; gap:3px; }
+  .syncfx .dots span { width:9px; height:9px; border-radius:2px; background:#1d2a42; cursor:pointer; transition:background .3s; }
+  .syncfx .dots span:hover { outline:1px solid var(--mut); }
+  .syncfx .dots .ok { background:var(--grn); animation:fxdot .45s ease-out; }
+  .syncfx .dots .bad { background:var(--err); animation:fxdot .45s ease-out; }
+  .syncfx .dots .cur { background:var(--acc); animation:fxpulse 1s ease-in-out infinite; }
+  .set.fx-q { opacity:.5; filter:saturate(.6); }
+  .set.fx-cur { border-color:var(--acc); box-shadow:0 0 0 1px var(--acc), 0 0 24px rgba(245,197,24,.35); transform:translateY(-2px); }
+  .set.fx-cur::after { content:''; position:absolute; inset:0; border-radius:inherit; pointer-events:none; background:linear-gradient(100deg,transparent 30%,rgba(245,197,24,.16) 50%,transparent 70%); background-size:300% 100%; animation:fxsweep 1.4s linear infinite; animation-delay:var(--fxd,0ms); }
+  .set .fxchip { position:absolute; top:9px; right:10px; padding:1px 7px; border-radius:99px; background:rgba(245,197,24,.15); color:var(--acc); font-size:10.5px; font-weight:700; letter-spacing:.02em; animation:fxblink 1.2s ease-in-out infinite; animation-delay:var(--fxd,0ms); }
+  .set .fxbar { position:absolute; left:12px; right:12px; bottom:6px; height:3px; border-radius:9px; background:rgba(255,255,255,.07); overflow:hidden; }
+  .set .fxbar i { display:block; height:100%; background:var(--acc); box-shadow:0 0 8px var(--acc); transition:width .6s ease; }
+  .set.fx-just { animation:fxpop .9s ease-out var(--fxj,0ms) both; }
+  .set.fx-just .sc { animation:fxglow .9s ease-out var(--fxj,0ms) both; }
+  .set.fx-fail { animation:fxshake .5s ease-in-out var(--fxj,0ms) both; border-color:rgba(239,90,90,.6); }
+  /* alım şeridi: kart yüzleri */
+  .syncfx .spent { color:var(--mut); font-variant-numeric:tabular-nums; } .syncfx .spent b { color:var(--acc); }
+  .syncfx.end .spent b { color:var(--grn); }
+  .syncfx .bcards { position:relative; display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+  .syncfx .bcards .pick { display:flex; gap:7px; align-items:center; color:var(--mut); font-size:12px; padding:6px 2px; }
+  .syncfx .bcards .spin { width:11px; height:11px; border:2px solid rgba(245,197,24,.25); border-top-color:var(--acc); border-radius:50%; animation:fxspin .8s linear infinite; box-sizing:border-box; }
+  .bc { position:relative; display:grid; grid-template-columns:30px auto; grid-template-rows:auto auto; column-gap:6px; align-items:center; padding:4px 8px 4px 4px; min-width:92px; max-width:150px; border:1px solid var(--line); border-radius:9px; background:#111b2e; overflow:hidden; transition:opacity .3s, border-color .3s; }
+  .bc .face { grid-row:1 / 3; width:30px; height:30px; border-radius:6px; object-fit:cover; background:#16233b; }
+  .bc .r { position:absolute; left:3px; bottom:2px; font-size:9.5px; font-weight:800; padding:0 3px; border-radius:4px; background:rgba(0,0,0,.65); }
+  .bc .n { padding-right:10px; font-size:11px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bc .p { font-size:10.5px; color:var(--mut); font-variant-numeric:tabular-nums; }
+  .bc .ok { position:absolute; top:2px; right:5px; color:var(--grn); font-weight:800; font-size:11px; }
+  .bc.sp { border-color:rgba(166,107,255,.45); }
+  .bc.q { opacity:.45; filter:saturate(.5); }
+  .bc.find { border-color:var(--acc); box-shadow:0 0 0 1px var(--acc), 0 0 14px rgba(245,197,24,.35); animation:fxbreath 1s ease-in-out infinite; animation-delay:var(--fxd,0ms); }
+  .bc.find::after { content:''; position:absolute; inset:0; pointer-events:none; background:linear-gradient(100deg,transparent 30%,rgba(245,197,24,.2) 50%,transparent 70%); background-size:300% 100%; animation:fxsweep 1s linear infinite; animation-delay:var(--fxd,0ms); }
+  .bc.find .p { color:var(--acc); }
+  .bc.ok { border-color:rgba(47,208,138,.5); } .bc.ok .p { color:var(--grn); font-weight:800; }
+  .bc.ok.just { animation:fxpop .9s ease-out var(--fxj,0ms) both; } .bc.ok.just .p { animation:fxdrop .6s cubic-bezier(.2,.9,.3,1.3) var(--fxj,0ms) both; }
+  .bc.again { border-style:dashed; border-color:rgba(240,180,60,.6); } .bc.again .p { color:var(--warn); }
+  .sc2.fx-again { border-style:dashed; border-color:rgba(240,180,60,.6); } .sc2.fx-again .bst { color:var(--warn); }
+  .bc.skip { opacity:.55; } .bc.skip .n { text-decoration:line-through; color:var(--mut); } .bc.skip .p { color:var(--warn); }
+  .bc.fail { border-color:rgba(239,90,90,.6); } .bc.fail .p { color:var(--err); } .bc.fail.just { animation:fxshake .5s ease-in-out var(--fxj,0ms) both; }
+  /* detaydaki çözüm kartları alım sırasında */
+  .sc2 .bst { display:block; margin-top:3px; font-size:10.5px; font-weight:800; border-radius:5px; padding:1px 0; background:rgba(255,255,255,.05); color:var(--mut); }
+  .sc2.fx-find { border-color:var(--acc); box-shadow:0 0 0 1px var(--acc), 0 0 16px rgba(245,197,24,.35); animation:fxbreath 1s ease-in-out infinite; animation-delay:var(--fxd,0ms); }
+  .sc2.fx-find .bst { color:var(--acc); }
+  .sc2.fx-ok { border-color:rgba(47,208,138,.6); } .sc2.fx-ok .bst { color:var(--grn); background:rgba(47,208,138,.12); }
+  .sc2.fx-ok.fx-just { animation:fxpop .9s ease-out var(--fxj,0ms) both; } .sc2.fx-ok.fx-just .bst { animation:fxdrop .6s cubic-bezier(.2,.9,.3,1.3) var(--fxj,0ms) both; }
+  .sc2.fx-skip { opacity:.6; } .sc2.fx-skip .bst { color:var(--warn); }
+  .sc2.fx-fail { border-color:rgba(239,90,90,.6); } .sc2.fx-fail .bst { color:var(--err); } .sc2.fx-fail.fx-just { animation:fxshake .5s ease-in-out var(--fxj,0ms) both; }
+  @keyframes fxbreath { 0%,100% { transform:none; } 50% { transform:translateY(-1px) scale(1.03); } }
+  @keyframes fxdrop { 0% { opacity:0; transform:translateY(-10px) scale(1.3); } 100% { opacity:1; transform:none; } }
+  @keyframes fxin { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:none; } }
+  @keyframes fxspin { to { transform:rotate(360deg); } }
+  @keyframes fxsweep { from { background-position:100% 0; } to { background-position:-50% 0; } }
+  @keyframes fxgloss { from { background-position:-60% 0; } to { background-position:160% 0; } }
+  @keyframes fxdot { 0% { transform:scale(1.9); } 100% { transform:scale(1); } }
+  @keyframes fxpulse { 0%,100% { transform:scale(1); box-shadow:0 0 0 0 rgba(245,197,24,.6); } 50% { transform:scale(1.25); box-shadow:0 0 0 3px rgba(245,197,24,0); } }
+  @keyframes fxblink { 0%,100% { opacity:1; } 50% { opacity:.45; } }
+  @keyframes fxpop { 0% { transform:scale(.97); box-shadow:0 0 0 2px var(--grn), 0 0 32px rgba(47,208,138,.65); border-color:var(--grn); } 35% { transform:scale(1.03); } 100% { transform:none; box-shadow:0 0 0 0 rgba(47,208,138,0); } }
+  @keyframes fxglow { 0% { text-shadow:0 0 14px var(--grn); transform:scale(1.15); } 100% { text-shadow:none; transform:none; } }
+  @keyframes fxshake { 0%,100% { transform:none; } 25% { transform:translateX(-4px); } 75% { transform:translateX(4px); } }
+  @media (prefers-reduced-motion: reduce) { .syncfx, .syncfx *, .syncfx::before, .set, .set *, .set::after, .bc, .bc *, .bc::after, .sc2, .sc2 * { animation:none !important; transition:none !important; } }
 </style>
 </head>
 <body>
@@ -214,9 +316,12 @@
     <button class="g" id="catRefresh" style="padding:2px 8px" data-i18n="btn.catRefresh"></button>
     <button class="g" id="diag" style="padding:2px 8px" data-i18n="btn.diag" data-i18n-title="btn.diag.title"></button>
     <button class="g" id="buys" style="padding:2px 8px" data-i18n="btn.buys" data-i18n-title="btn.buys.title"></button>
+    <button class="g" id="resetGraded" style="padding:2px 8px" data-i18n="btn.resetGraded" data-i18n-title="btn.resetGraded.title"></button>
+    <span id="acct" class="note" hidden></span>
     <span style="flex:1"></span>
     <a href="#" id="toList" data-i18n="toList"></a>
   </div>
+  <div class="syncfx" id="syncfx" hidden></div>
   <div class="selbar" id="selbar" hidden></div>
   <div class="grid" id="grid"></div>
 </main>

@@ -1,8 +1,8 @@
 import { loadCatalog } from './lib/catalog.js';
 import {
   summarise, applyFloors, gradeFor, cheapestFill, counted as countedOf, GRADES, baseOf,
-  syncEstimate, fmtDur, planFromTier, defaultTier, pickGrade, pickBatch, bestNext, tierOptions, planTokens, HALL_OF_FUT,
-  sortOptions, showOptions, sortFilterSets, tokenLabel, tokenRows, overview, reachableScore, nextMilestone, OVER_REF,
+  syncEstimate, fmtDur, planFromTier, solveGrade, defaultTier, pickGrade, pickBatch, bestNext, tierOptions, planTokens, HALL_OF_FUT,
+  sortOptions, showOptions, sortFilterSets, tokenLabel, tokenRows, overview, reachableScore, nextMilestone, OVER_REF, tagRows,
 } from './lib/gallery.js';
 import { makeT, detectLang, localeOf, LANGS, FLAGS } from './lib/i18n.js';
 import { imgUrls } from './lib/img.js';
@@ -80,6 +80,16 @@ let openId = null;
 let openGrade = null;     // detayda seçili not sekmesi
 let confirmBuy = false;
 let cardFilter = 'all';   // detay: all | missing | collected
+// Çözüm kaynağı: 'futgg' (varsayılan) | 'gg' (Gallery Grab çözücü); seçilen kaynakta o derece yoksa diğeri gösterilir
+let solSrc = 'futgg';
+try { solSrc = localStorage.getItem('fcg-src') === 'gg' ? 'gg' : 'futgg'; } catch (_) {}
+function plansFor(set, grade, defs, prices) {
+  const fg = planFromTier(set, grade, defs, prices);
+  const gg = solveGrade(set, grade, defs, prices);
+  return { fg, gg: gg && !gg.unreachable ? gg : null };
+}
+const pickPlan = (pl) => (solSrc === 'gg' ? pl.gg || pl.fg : pl.fg || pl.gg);
+const planCost = (p, defs) => (defs ? p.need : p.cost);
 let listOpen = false;     // detay: "Setteki tüm kartlar" açık mı (yeniden çizimde kapanmasın)
 let scrolledTab = null;   // sekme çubuğu yalnız sekme değişince kaydırılır
 let state = {};
@@ -126,19 +136,248 @@ function renderTabs() {
   const tabName = CAT.categories.find((c) => c.id === tab)?.name || '';
   $('syncTab').textContent = t('btn.syncTab', { name: tabName.split(' / ')[0] });   // "Premier League / Barclays WSL" → kısa
   $('syncTab').title = t('btn.syncTab.title', { name: tabName });
-  $('tabs').replaceChildren(...CAT.categories.map((c) => h('button', {
+  const bar = $('tabs');
+  const keep = bar.scrollLeft;   // yeniden kurulunca kullanıcının kaydırdığı yer korunur
+  bar.replaceChildren(...CAT.categories.map((c) => h('button', {
     class: c.id === tab ? 'on' : '', text: c.name,
     onclick: () => { tab = c.id; try { localStorage.setItem('fcg-tab', tab); } catch (_) {} render(); },
   })));
-  // Yalnız sekme değişince ve yalnız yatay kaydır (scrollIntoView her çizimde sayfayı sekmelere zıplatıyordu)
+  bar.scrollLeft = keep;
+  // Yalnız sekme değişince ve seçilen sekme görünmüyorsa yatay kaydır (tıklanan sekme zaten görünür → çubuk yerinde kalır)
   if (scrolledTab !== tab) {
     scrolledTab = tab;
-    const on = $('tabs').querySelector('.on');
-    const bar = $('tabs');
-    if (on && (on.offsetLeft < bar.scrollLeft || on.offsetLeft + on.offsetWidth > bar.scrollLeft + bar.clientWidth)) {
-      bar.scrollLeft = Math.max(0, on.offsetLeft - 8);
+    const on = bar.querySelector('.on');
+    if (on) {
+      const b = bar.getBoundingClientRect(), r = on.getBoundingClientRect();   // offsetLeft sayfaya göre ölçüyordu → en sağa kayıyordu
+      if (r.left < b.left) bar.scrollLeft += r.left - b.left - 8;
+      else if (r.right > b.right) bar.scrollLeft += r.right - b.right + 8;
     }
   }
+}
+
+// ---------------------------------------------------------------- eşitleme animasyonu
+// galleryRun.sync (background syncSets): { ids, done, fail, cur, req, reqN, left, t0, end }. Izgara her depolama
+// değişikliğinde yeniden çizildiği için sürekli animasyonlar ortak saatten negatif gecikmeyle başlar (kesintisiz görünür),
+// sayaçlar zamana göre hesaplanır.
+// Alım (galleryRun.buy, background buyFx) aynı şeridi ve set kartı durumlarını kullanır: { ids, done, fail, cur, cards, spent, bought, t0, end }.
+const FX = { t0: 0, seen: new Set(), just: new Map(), last: new Map(), count: new Map(), raf: 0, hideTm: null, cur: null, ct0: 0, cseen: new Set(), cjust: new Map() };
+const FX_JUST = 1000;    // biten kartın parlaması (ms)
+const FX_KEEP = 12000;   // bitince şeridin ekranda kalma süresi (ms)
+const FX_COUNT = 900;    // sayaç süresi (ms)
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let fxFollow = false;
+try { fxFollow = localStorage.getItem('fcg-follow') === '1'; } catch (_) {}
+// eşitleme ya da alım (görev başında ikisi de silinir; ikisi varsa yenisi)
+const fxSync = () => { const a = state.galleryRun?.sync, b = state.galleryRun?.buy; return a && b ? (b.t0 > a.t0 ? b : a) : a || b || null; };
+const fxBuy = () => { const s = fxSync(); return s && s === state.galleryRun?.buy ? s : null; };
+const BC_DONE = new Set(['ok', 'skip', 'fail']);
+const fxBuyPart = (s) => (s.cards?.length ? s.cards.filter((c) => BC_DONE.has(c.st)).length / s.cards.length : 0);   // o anki setin biten kart oranı
+const fxEndAt = (s) => s.end || (state.galleryRun?.running ? 0 : state.galleryRun?.ts || 0);
+const fxActive = () => { const s = fxSync(); return !!s && (state.galleryRun?.running || Date.now() - fxEndAt(s) < FX_KEEP); };
+const fxDelay = (period) => `-${Math.round(performance.now() % period)}ms`;
+
+// render başında: bu çizimde yeni biten setler (sayfa açıldığında zaten bitmiş olanlar parlamaz)
+function fxTrack() {
+  const s = fxSync();
+  if (!s) { FX.t0 = 0; return; }
+  if (s.t0 !== FX.t0) { FX.t0 = s.t0; FX.seen = new Set([...s.done, ...s.fail]); FX.just.clear(); }
+  for (const id of [...s.done, ...s.fail]) if (!FX.seen.has(id)) { FX.seen.add(id); FX.just.set(id, Date.now()); }
+  // alımda biten kartlar bir kez parlar (sayfa açıldığında zaten bitmiş olanlar hariç)
+  const keys = (s.cards || []).filter((c) => BC_DONE.has(c.st)).map((c) => `${s.cur}:${c.def}:${c.st}`);
+  if (FX.ct0 !== s.t0) { FX.ct0 = s.t0; FX.cseen = new Set(keys); FX.cjust.clear(); }
+  for (const k of keys) if (!FX.cseen.has(k)) { FX.cseen.add(k); FX.cjust.set(Number(k.split(':')[1]), Date.now()); }
+}
+const fxCardJust = (def) => { const j = FX.cjust.get(def); return j && Date.now() - j < FX_JUST * 1.6 ? j : 0; };
+function fxCard(id) {
+  const s = fxSync();
+  if (!s || !fxActive() || !s.ids.includes(id)) return null;
+  const run = !!state.galleryRun?.running;
+  if (run && s.cur === id) return 'cur';
+  const j = FX.just.get(id);
+  if (j && Date.now() - j < FX_JUST) return s.fail.includes(id) ? 'fail' : 'just';
+  if (s.done.includes(id) || s.fail.includes(id)) return null;
+  return run ? 'q' : null;
+}
+// Sayı: değeri değiştiyse (eşitleme sırasında) eskisinden yenisine sayarak gelir
+function cnt(key, value, show = fmt) {
+  const last = FX.last.get(key);
+  FX.last.set(key, value);
+  if (!reduceMotion && value != null && last != null && last !== value && fxActive()) FX.count.set(key, { from: FX.count.has(key) ? cntNow(key, last) : last, to: value, t: Date.now() });
+  const el = h('span', { text: show(cntNow(key, value)) });
+  el.dataset.cnt = key;
+  el.cntShow = show;
+  if (FX.count.size && !FX.raf) FX.raf = requestAnimationFrame(cntTick);
+  return el;
+}
+function cntNow(key, value) {
+  const c = FX.count.get(key);
+  if (!c) return value;
+  const p = Math.min(1, (Date.now() - c.t) / FX_COUNT);
+  return c.from + (c.to - c.from) * (1 - (1 - p) ** 3);
+}
+function cntTick() {
+  FX.raf = 0;
+  for (const el of document.querySelectorAll('[data-cnt]')) {
+    const c = FX.count.get(el.dataset.cnt);
+    if (!c) continue;
+    el.textContent = el.cntShow(cntNow(el.dataset.cnt, c.to));
+    if (Date.now() - c.t >= FX_COUNT) FX.count.delete(el.dataset.cnt);
+  }
+  for (const [k, c] of FX.count) if (Date.now() - c.t >= FX_COUNT) FX.count.delete(k);   // ekranda olmayanlar
+  if (FX.count.size) FX.raf = requestAnimationFrame(cntTick);
+}
+// Genişliği önceki değerden yeni değere kayan çubuk (öğe her çizimde yeniden kurulsa da)
+function slideBar(key, pct) {
+  const i = h('i');
+  const from = FX.last.get(key);
+  FX.last.set(key, pct);
+  i.style.width = (from ?? pct) + '%';
+  if (from != null && from !== pct) requestAnimationFrame(() => requestAnimationFrame(() => { i.style.width = pct + '%'; }));
+  return i;
+}
+// Üstteki ilerleme şeridi (kalıcı öğe: yalnız içi güncellenir, geçişler akıcı kalır)
+function renderSyncFx() {
+  const el = $('syncfx');
+  const s = fxSync();
+  const run = !!state.galleryRun?.running;
+  if (!s || !fxActive()) { el.hidden = true; el.dataset.t0 = ''; return; }
+  el.hidden = false;
+  if (s === fxBuy()) return renderBuyFx(el, s, run);
+  if (el.classList.contains('buy')) { el.classList.remove('buy'); el.dataset.t0 = ''; }
+  const ended = !run;
+  if (ended && !FX.hideTm) FX.hideTm = setTimeout(() => { FX.hideTm = null; renderSyncFx(); render(); }, Math.max(0, FX_KEEP - (Date.now() - fxEndAt(s))) + 50);
+  const byId = new Map(CAT.sets.map((x) => [x.id, x]));
+  if (el.dataset.t0 !== String(s.t0)) {
+    el.dataset.t0 = String(s.t0);
+    const follow = h('label', { class: 'fol', title: t('fx.follow.title') }, [
+      h('input', { type: 'checkbox', checked: fxFollow, onchange: (e) => { fxFollow = e.target.checked; try { localStorage.setItem('fcg-follow', fxFollow ? '1' : '0'); } catch (_) {} if (fxFollow) fxGo(fxSync()?.cur); } }),
+      t('fx.follow'),
+    ]);
+    el.replaceChildren(
+      h('div', { class: 'hd' }, [h('span', { class: 'ic' }), h('b', { class: 'ttl' }), h('span', { class: 'ct' }), h('a', { class: 'now', href: '#', title: t('fx.now.title') }), h('span', { class: 'left' }), h('span', { style: 'flex:1' }), follow]),
+      h('div', { class: 'pb' }, h('i')),
+      h('div', { class: 'dots' }, s.ids.map((id) => { const d = h('span', { title: byId.get(id)?.name || '' }); d.onclick = () => fxGo(id, true); return d; })),
+    );
+  }
+  const n = s.ids.length;
+  const k = s.done.length + s.fail.length;
+  const part = run && s.cur ? Math.min(0.95, s.req / Math.max(1, s.reqN)) : 0;
+  el.classList.toggle('end', ended && !!s.end);
+  el.classList.toggle('stopped', ended && !s.end);
+  el.querySelector('.ttl').textContent = run ? t('fx.run') : s.end ? t('fx.done') : t('fx.stopped');
+  el.querySelector('.ct').textContent = t('fx.count', { k: s.done.length, n }) + (s.fail.length ? ' · ' + t('fx.fail', { n: s.fail.length }) : '');
+  const now = el.querySelector('.now');
+  const cur = run && s.cur ? byId.get(s.cur) : null;
+  now.hidden = !cur;
+  if (cur) {
+    now.textContent = t('fx.now', { name: cur.name }) + (s.reqN > 1 ? ` (${t('fx.pages', { i: Math.min(s.req + 1, s.reqN), n: s.reqN })})` : '');
+    now.onclick = (e) => { e.preventDefault(); fxGo(cur.id, true); };
+  }
+  el.querySelector('.left').textContent = run ? (s.left ? t('fx.left', { t: fmtDur(s.left, t) }) : '') : t('fx.took', { d: fmtDur(((s.end || fxEndAt(s)) - s.t0) / 1000, t) });
+  el.querySelector('.pb i').style.width = (ended && s.end ? 100 : ((k + part) / n) * 100).toFixed(1) + '%';
+  [...el.querySelector('.dots').children].forEach((d, i) => {
+    const id = s.ids[i];
+    d.className = s.done.includes(id) ? 'ok' : s.fail.includes(id) ? 'bad' : run && s.cur === id ? 'cur' : '';
+  });
+  if (fxFollow && run && s.cur && s.cur !== FX.cur) fxGo(s.cur);
+  FX.cur = run ? s.cur : null;
+}
+// Alım şeridi: başlık + harcanan (sayarak) + çubuk + o anki setin kart yüzleri + (çoklu alımda) set noktaları
+function renderBuyFx(el, s, run) {
+  const ended = !run;
+  if (ended && !FX.hideTm) FX.hideTm = setTimeout(() => { FX.hideTm = null; renderSyncFx(); render(); }, Math.max(0, FX_KEEP - (Date.now() - fxEndAt(s))) + 50);
+  const byId = new Map(CAT.sets.map((x) => [x.id, x]));
+  const multi = s.ids.length > 1;
+  if (el.dataset.t0 !== String(s.t0)) {
+    el.dataset.t0 = String(s.t0);
+    el.classList.add('buy');
+    const follow = h('label', { class: 'fol', title: t('fx.follow.title') }, [
+      h('input', { type: 'checkbox', checked: fxFollow, onchange: (e) => { fxFollow = e.target.checked; try { localStorage.setItem('fcg-follow', fxFollow ? '1' : '0'); } catch (_) {} if (fxFollow) fxGo(fxSync()?.cur); } }),
+      t('fx.follow'),
+    ]);
+    el.replaceChildren(
+      h('div', { class: 'hd' }, [h('span', { class: 'ic' }), h('b', { class: 'ttl' }), h('a', { class: 'now', href: '#', title: t('fx.now.title') }), h('span', { class: 'ct' }), h('span', { style: 'flex:1' }), h('span', { class: 'spent' }), multi ? follow : null]),
+      h('div', { class: 'pb' }, h('i')),
+      h('div', { class: 'bcards' }),
+      multi ? h('div', { class: 'dots' }, s.ids.map((id) => { const d = h('span', { title: byId.get(id)?.name || '' }); d.onclick = () => fxGo(id, true); return d; })) : null,
+    );
+  }
+  const n = s.ids.length;
+  const k = s.done.length + s.fail.length;
+  const cards = s.cards || [];
+  const cdone = cards.filter((c) => BC_DONE.has(c.st)).length;
+  el.classList.toggle('end', ended && !!s.end);
+  el.classList.toggle('stopped', ended && !s.end);
+  el.querySelector('.ttl').textContent = run ? t('fx.buy.run') : s.end ? t('fx.buy.done') : t('fx.buy.stopped');
+  const cur = s.cur ? byId.get(s.cur) : null;
+  const now = el.querySelector('.now');
+  now.hidden = !cur;
+  if (cur) {
+    now.textContent = cur.name + (multi ? ` [${Math.min(k + 1, n)}/${n}]` : '');
+    now.onclick = (e) => { e.preventDefault(); fxGo(cur.id, true); };
+  }
+  el.querySelector('.ct').textContent = [
+    cur && cards.length ? t('fx.buy.cards', { k: cdone, n: cards.length }) : null,
+    !run ? t('fx.buy.got', { n: s.bought }) : null,
+    multi ? t('fx.count', { k: s.done.length, n }) : null,
+    s.fail.length ? t('fx.fail', { n: s.fail.length }) : null,
+    !run ? t('fx.took', { d: fmtDur(((s.end || fxEndAt(s)) - s.t0) / 1000, t) }) : null,
+  ].filter(Boolean).join(' · ');
+  el.querySelector('.spent').replaceChildren(t('fx.buy.spent') + ': ', h('b', {}, [cnt('spent' + s.t0, s.spent)]));
+  const part = run && s.cur ? Math.min(0.95, fxBuyPart(s)) : 0;
+  el.querySelector('.pb i').style.width = (ended && s.end ? 100 : ((k + part) / n) * 100).toFixed(1) + '%';
+  const img = imgUrls(state.galleryMeta?.imgBase);
+  const bc = el.querySelector('.bcards');
+  if (run && cur && !cards.length) bc.replaceChildren(h('span', { class: 'pick' }, [h('i', { class: 'spin' }), t('fx.buy.picking')]));
+  else bc.replaceChildren(...cards.map((c) => buyChip(c, img)));
+  if (multi) [...el.querySelector('.dots').children].forEach((d, i) => {
+    const id = s.ids[i];
+    d.className = s.done.includes(id) ? 'ok' : s.fail.includes(id) ? 'bad' : run && s.cur === id ? 'cur' : '';
+  });
+  if (fxFollow && multi && run && s.cur && s.cur !== FX.cur) fxGo(s.cur);
+  FX.cur = run ? s.cur : null;
+}
+const BC_TEXT = { find: 'fx.buy.find', skip: 'fx.buy.skip', fail: 'fx.buy.fail', again: 'fx.buy.again' };
+// Şeritteki kart: yüz + reyting + ad + durum (alındıysa fiyat)
+function buyChip(c, img) {
+  const j = fxCardJust(c.def);
+  const el = h('div', { class: `bc ${c.st}${c.rare > 1 ? ' sp' : ''}${j ? ' just' : ''}`, title: c.name }, [
+    icon(img.portrait(c.base), 'face'),
+    c.r ? h('b', { class: 'r', text: String(c.r) }) : null,
+    h('span', { class: 'n', text: c.name }),
+    h('span', { class: 'p', text: c.st === 'ok' ? kfmt(c.p) : BC_TEXT[c.st] ? t(BC_TEXT[c.st]) : '' }),
+    c.st === 'ok' ? h('span', { class: 'ok', text: '✓' }) : null,
+  ]);
+  if (c.st === 'find') el.style.setProperty('--fxd', fxDelay(1000));
+  if (j) el.style.setProperty('--fxj', `-${Date.now() - j}ms`);
+  return el;
+}
+// Detaydaki çözüm kartının alım durumu: bu set alınıyorsa / az önce alındıysa (yoksa null)
+function buyStateOf(setId, def) {
+  const s = fxBuy();
+  if (!s || !fxActive()) return null;
+  return s.cset === setId ? s.cards?.find((c) => c.def === def) || null : null;
+}
+
+// Çözüm kartına alım durumunu işler: fx-find (nabız) / fx-ok (✓ + ödenen) / fx-skip / fx-fail, yeni bitende fx-just
+function buyMark(el, b) {
+  if (!b || b.st === 'q') return el;
+  const j = fxCardJust(b.def);
+  el.classList.add('fx-' + b.st);
+  if (j) { el.classList.add('fx-just'); el.style.setProperty('--fxj', `-${Date.now() - j}ms`); }
+  if (b.st === 'find') el.style.setProperty('--fxd', fxDelay(1000));
+  if (b.st === 'ok' && !el.querySelector('.ok')) el.append(h('span', { class: 'ok', text: '✓' }));
+  el.append(h('span', { class: 'bst', text: b.st === 'ok' ? kfmt(b.p) : t(BC_TEXT[b.st]) }));
+  return el;
+}
+
+// Seti ızgarada göster (gerekirse sekmesine geç); open: detayı da aç
+async function fxGo(id, open = false) {
+  const set = id && CAT.sets.find((x) => x.id === id);
+  if (!set) return;
+  if (open) return openDetail(id);
+  if (tab !== set.cat) { tab = set.cat; await render(); }
+  document.querySelector(`.set[data-id="${id}"]`)?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
 }
 
 function card(set, sum, img) {
@@ -146,22 +385,30 @@ function card(set, sum, img) {
   const full = sum && sum.collected >= sum.required;
   const toGrade = !!state.galleryToGrade?.[set.id] || !!NEXT.get(set.id)?.ready;
   const picked = SEL.on && SEL.ids.includes(set.id);
-  return h('div', { class: 'set' + (full ? ' full' : '') + (picked ? ' picked' : ''), onclick: () => (SEL.on ? toggleSel(set.id) : openDetail(set.id)) }, [
-    full ? h('span', { class: 'chk', text: '✓' }) : null,
+  const fx = fxCard(set.id);
+  const s = fxSync();
+  const el = h('div', { class: 'set' + (full ? ' full' : '') + (picked ? ' picked' : '') + (fx ? ' fx-' + fx : ''), onclick: () => (SEL.on ? toggleSel(set.id) : openDetail(set.id)) }, [
+    fx === 'cur' ? h('span', { class: 'fxchip', text: fxBuy() ? t('fx.buy.chip') : t('fx.chip') }) : null,
+    fx === 'cur' ? h('div', { class: 'fxbar' }, slideBar('bar' + set.id, Math.round(Math.min(0.95, fxBuy() ? Math.max(0.05, fxBuyPart(s)) : (s.req + 0.5) / Math.max(1, s.reqN)) * 100))) : null,
+    full && fx !== 'cur' ? h('span', { class: 'chk', text: '✓' }) : null,
     SEL.on ? h('span', { class: 'pick', text: picked ? String(SEL.ids.indexOf(set.id) + 1) : '' }) : null,
     toGrade ? h('span', { class: 'gbadge', text: t('grade.badge'), title: t('ov.toGrade.title') }) : null,
     h('div', { class: 'hd' }, [
       setArt(set, img),
       h('div', {}, [
         h('div', { class: 'nm', text: set.name }),
-        h('div', { class: 'cnt', text: sum ? t('card.collected', { n: sum.collected, req: set.required }) : `— / ${set.required}` }),
-        sum ? h('div', { class: 'sc', title: t('card.score') }, [h('i', { class: 'dia' }), fmt(sum.score)])
+        h('div', { class: 'cnt' }, sum ? cnt('c' + set.id, sum.collected, (v) => t('card.collected', { n: Math.round(v), req: set.required })) : `— / ${set.required}`),
+        sum ? h('div', { class: 'sc', title: t('card.score') }, [h('i', { class: 'dia' }), cnt('s' + set.id, sum.score)])
           : h('div', { class: 'note', text: unsupported ? t('card.untrackable') : t('card.unsynced') }),
       ]),
     ]),
     diamonds(set, sum?.grade),
     h('div', { class: 'tk', title: NEXT.get(set.id)?.est ? t('card.est') : '' }, tokenRows(set, sum, NEXT.get(set.id), t, reachableScore(set, DEFS.get(set.id) || null)).flatMap(([l, v, c]) => [h('span', { text: l }), h('b', { class: c, text: v })])),
   ]);
+  el.dataset.id = set.id;
+  if (fx === 'cur') el.style.setProperty('--fxd', fxDelay(1400));
+  if (fx === 'just' || fx === 'fail') el.style.setProperty('--fxj', `-${Date.now() - FX.just.get(set.id)}ms`);
+  return el;
 }
 const NEXT = new Map();
 function computeNext() {
@@ -173,8 +420,11 @@ const summaryEarned = (set, s) => s.earned ?? set.grades.filter((g) => s.score >
 
 async function render() {
   if (!CAT) return;
-  state = await chrome.storage.local.get(['gallerySummary', 'galleryRun', 'gallerySettings', 'galleryMeta', 'galleryBuySpent', 'gallerySyncStats', 'galleryLevel', 'galleryToGrade', 'galleryPrices', 'galleryGraded']);
+  state = await chrome.storage.local.get(['gallerySummary', 'galleryRun', 'gallerySettings', 'galleryMeta', 'galleryBuySpent', 'gallerySyncStats', 'galleryLevel', 'galleryToGrade', 'galleryPrices', 'galleryGraded', 'galleryAcct']);
+  $('acct').hidden = !state.galleryAcct?.name;
+  $('acct').textContent = state.galleryAcct?.name ? t('acct.label', { name: state.galleryAcct.name }) : '';
   applyFloors(CAT.sets, state.galleryGraded || {});
+  fxTrack();
   if (!CAT.categories.some((c) => c.id === tab)) tab = CAT.categories[0].id;
   renderTabs();
   const img = imgUrls(state.galleryMeta?.imgBase);
@@ -197,6 +447,7 @@ async function render() {
   renderOverview(sums, sets);
 
   renderBar();
+  renderSyncFx();
   renderSel();
   if (openId) renderDetail();
 }
@@ -206,7 +457,7 @@ function renderOverview(sums, tabSets) {
   const all = overview(CAT.sets, sums, (id) => DEFS.get(id) || null);
   const tb = overview(tabSets, sums, (id) => DEFS.get(id) || null);
   const box = (label, value, sub, cls = '', title = '') => h('div', { title }, [
-    h('div', { class: 'l', text: label }), h('div', { class: 'v ' + cls, text: value }), sub ? h('div', { class: 's', text: sub }) : null,
+    h('div', { class: 'l', text: label }), h('div', { class: 'v ' + cls }, value), sub ? h('div', { class: 's', text: sub }) : null,
   ]);
   const lv = state.galleryLevel || 0;
   const nm = nextMilestone(lv);
@@ -215,7 +466,7 @@ function renderOverview(sums, tabSets) {
   $('ovw').replaceChildren(
     h('div', { title: t('ov.level.title') }, [h('div', { class: 'l', text: t('ov.level') }), h('div', { class: 'v a' }, [lvIn, h('span', { class: 'of', text: ' / 25' })]),
       h('div', { class: 's', text: lv ? (nm ? t('ov.level.next', { n: nm }) : t('ov.level.max')) : '' })]),
-    box(t('ov.score'), fmt(all.score), t('ov.synced', { n: all.synced, m: all.total }), 'g', t('ov.score.title')),
+    box(t('ov.score'), cnt('ovScore', all.score), t('ov.synced', { n: all.synced, m: all.total }), 'g', t('ov.score.title')),
     box(t('ov.earned'), fmt(all.earned), t('ov.tab', { v: fmt(tb.earned) }), 'g'),
     box(t('ov.reachPts'), '+' + fmt(all.reachPts), t('ov.tab', { v: '+' + fmt(tb.reachPts) }), 'g', t('ov.reachPts.title')),
     box(t('ov.reach'), fmt(all.reach), t('ov.reachCost', { c: kfmt(all.reachCost), t: kfmt(all.reachTax) }) + ' · ' + t('ov.tab', { v: fmt(tb.reach) }), 'a', t('ov.reach.title')),
@@ -413,28 +664,57 @@ function inGameRow(set, sum) {
   ].filter(Boolean));
 }
 
+// Puan dökümü: taban + bonus, açılınca etiket satırları (en yüksek 10 sayılır)
+function scoreSplit(sum) {
+  if (!sum.bonus && !sum.tags?.some((r) => r.pct > 0)) return null;
+  const rows = tagRows(sum.tags, t);
+  return h('details', { class: 'tags' }, [
+    h('summary', { text: t('pts.split', { b: fmt(sum.base), x: fmt(sum.bonus) }) }),
+    rows.length ? h('div', { class: 'tagl' }, rows.map((r) => h('div', { class: r.off ? 'off' : '', title: r.off ? t('tags.off') : '' }, [
+      h('span', { text: r.name }), h('small', { text: t('tags.row', { n: r.n, p: r.pct }) }), h('b', { text: '+' + fmt(r.bonus) }),
+    ]))) : h('div', { class: 'note', text: t('tags.none') }),
+    h('div', { class: 'note', text: t('tags.note') }),
+  ]);
+}
+
 function gradeTabs(set, sum, defs, prices) {
   return h('div', { class: 'gtabs' }, set.grades.map((g) => {
-    const p = planFromTier(set, g.g, defs, prices);
+    const p = pickPlan(plansFor(set, g.g, defs, prices));
     const got = sum && sum.score >= g.score;
     return h('div', {
-      class: `gt ${g.g}${g.g === openGrade ? ' on' : ''}${p ? '' : ' na'}${got ? ' got' : ''}`,
+      class: `gt ${g.g}${g.g === openGrade ? ' on' : ''}${p ? '' : ' na'}${got ? ' got' : ''}${p?.src === 'gg' ? ' gg' : ''}`,
       title: gradeTitle(set, g.g),
       onclick: () => { if (!p) return; openGrade = g.g; confirmBuy = false; renderDetail(); },
     }, [
       h('b', { text: g.g }),
-      h('div', { class: 'c', text: p ? t('coins', { n: fmt(defs ? p.need : p.cost) }) : t('unreachable') }),
+      h('div', { class: 'c', text: p ? t('coins', { n: fmt(planCost(p, defs)) }) : t('unreachable') }),
       h('div', { class: 't', text: t('tokens', { n: p ? p.tokens : g.tokens || 0 }) }),
     ]);
   }));
 }
 
-function solutionBox(set, plan, img, sum) {
+// fut.gg / Gallery Grab seçici: iki çözümün maliyeti yan yana, ucuz olan işaretli
+function srcSwitch(pl, plan, defs) {
+  const cf = pl.fg && planCost(pl.fg, defs), cg = pl.gg && planCost(pl.gg, defs);
+  const btn = (k, p, c, other) => h('button', {
+    class: (plan.src === 'gg' ? 'gg' : 'futgg') === k ? 'on' : '', disabled: !p, title: t('src.title.' + k),
+    onclick: () => { solSrc = k; try { localStorage.setItem('fcg-src', k); } catch (_) {} confirmBuy = false; cardFilter = 'all'; renderDetail(); },
+  }, [
+    h('b', { text: t('src.' + k) }),
+    h('span', { text: p ? t('coins', { n: fmt(c) }) : t('src.none') }),
+    p && other != null && c < other ? h('i', { text: t('src.cheaper', { n: kfmt(other - c) }) }) : null,
+  ]);
+  return h('div', { class: 'srcsw' }, [h('span', { class: 'l', text: t('src.label') }), btn('futgg', pl.fg, cf, cg), btn('gg', pl.gg, cg, cf)]);
+}
+
+function solutionBox(set, plan, img, sum, pl = { fg: plan, gg: null }) {
+  const gg = plan.src === 'gg';
+  const fell = solSrc === 'gg' ? !gg : gg;   // seçilen kaynakta bu derece yok
   const stats = h('div', { class: 'stats6' }, [
     h('div', { title: plan.priced ? t('st.need.title.live') : t('st.need.title.futgg') }, [
       plan.priced ? t('st.need.live', { p: plan.priced, m: plan.missing }) : t('st.need.futgg'),
       h('b', { text: plan.synced ? fmt(plan.need) : '—' })]),
-    h('div', {}, [t('st.total'), h('b', { text: fmt(plan.cost) })]),
+    h('div', {}, [gg ? t('st.total.gg') : t('st.total'), h('b', { text: fmt(gg ? plan.cards.reduce((a, c) => a + (c.price || 0), 0) : plan.cost) })]),
     h('div', {}, [t('st.tax'), h('b', { text: plan.synced ? fmt(plan.tax) : fmt(Math.ceil(plan.cost * 0.05)) })]),
     h('div', { title: t('st.sumPts.title') }, [t('st.sumPts'), h('b', { text: `${fmt(plan.sumSc)} / ${fmt(plan.threshold)}` })]),
     h('div', {}, [t('st.tokens'), h('b', { text: String(plan.tokens) })]),
@@ -445,17 +725,17 @@ function solutionBox(set, plan, img, sum) {
   const cards = h('div', { class: 'solg' }, plan.cards
     .filter((c) => cardFilter === 'all' || (cardFilter === 'missing' ? !c.col : c.col))
     .slice().sort((a, b) => (a.col - b.col) || b.price - a.price)
-    .map((c) => h('div', { class: 'sc2' + (c.col ? ' col' : '') + (c.rare > 1 ? ' sp' : ''), title: t('card.tip', { name: c.name || '#' + c.def, r: c.r, sc: fmt(c.sc), p: fmt(c.cost) }) + (c.col ? t('card.tip.col') : '') }, [
+    .map((c) => buyMark(h('div', { class: 'sc2' + (c.col ? ' col' : '') + (c.rare > 1 ? ' sp' : ''), title: t('card.tip', { name: c.name || '#' + c.def, r: c.r, sc: fmt(c.sc), p: fmt(c.cost) }) + (c.col ? t('card.tip.col') : '') }, [
       h('span', { class: 'rt', text: c.r }),
       c.col ? h('span', { class: 'ok', text: '✓' }) : null,
       icon(img.portrait(c.base), 'face'),
       h('div', { class: 'nm', text: c.name || '—' }),
       h('div', { class: 'ft' }, [h('span', { class: 'v', text: t('pts', { n: fmt(c.sc) }), title: t('pts.tip', { n: fmt(c.sc), src: c.scSrc }) }),
-        c.col ? h('span', { class: 'p', text: kfmt(c.price) })
+        c.col ? h('span', { class: 'p', text: c.price != null ? kfmt(c.price) : '' })
           : c.live === 0 ? h('span', { class: 'p none', text: t('noListing') })
           : c.live > 0 ? h('span', { class: 'p live', text: kfmt(c.live), title: t('live.tip', { p: fmt(c.price) }) })
           : h('span', { class: 'p', text: kfmt(c.price), title: t('futgg.tip') })]),
-    ])));
+    ]), c.col ? null : buyStateOf(set.id, c.def))));
 
   let actions;
   if (set.filter?.unsupported) {
@@ -476,15 +756,21 @@ function solutionBox(set, plan, img, sum) {
         onclick: () => {
           if (!confirmBuy) { confirmBuy = true; renderDetail(); return; }
           confirmBuy = false;
-          send({ type: 'buyPlan', id: set.id, grade: plan.grade });
+          send({ type: 'buyPlan', id: set.id, grade: plan.grade, src: gg ? 'gg' : 'futgg', defs: plan.cards.filter((c) => !c.col).map((c) => c.def) });
         },
       }),
       confirmBuy ? h('button', { class: 'g', text: t('cancel'), onclick: () => { confirmBuy = false; renderDetail(); } }) : null,
     ]);
   }
+  const owned = plan.cards.length - plan.missing;
   return h('div', { class: 'plan' }, [
+    srcSwitch(pl, plan, plan.synced),
+    fell ? h('div', { class: 'note warn', text: gg ? t('sol.fell.gg') : t('sol.fell.futgg') }) : null,
+    gg ? h('div', { class: 'ggline' }, plan.synced
+      ? [t('sol.gg.have', { h: owned }), plan.missing ? h('b', { text: t('sol.gg.buy', { n: plan.missing, c: fmt(plan.need) }) }) : '', t('sol.gg.get', { g: plan.grade, s: fmt(plan.sumSc), th: fmt(plan.threshold), b: fmt(plan.sumBonus) })]
+      : [t('sol.gg.unsynced', { n: plan.missing, c: fmt(plan.need), g: plan.grade })]) : null,
     stats, actions,
-    h('div', { class: 'note', style: 'margin-top:6px', text: t('sol.note', { g: plan.grade, d: solDate(set) }) + solAge(set) + (plan.noListing ? t('sol.noListing', { n: plan.noListing }) : '') + t('sol.bonus') }),
+    h('div', { class: 'note', style: 'margin-top:6px', text: (gg ? t('sol.note.gg', { d: solDate(set) }) : t('sol.note', { g: plan.grade, d: solDate(set) }) + solAge(set)) + (plan.noListing ? t('sol.noListing', { n: plan.noListing }) : '') + t('sol.bonus') }),
     chips, cards,
   ]);
 }
@@ -524,15 +810,17 @@ async function renderDetail() {
   const defs = saved?.defs || null;
   const sum = defs ? summarise(set, defs) : null;
   // Varsayılan: şu an ulaşılabilir en yüksek derece (coin/bütçe + ilan); yoksa eski kural
-  if (!openGrade || !set.sol?.tiers?.some((x) => x.g === openGrade)) openGrade = pickGrade(set, defs, prices, null, availCoins()).g || defaultTier(set, sum?.score || 0);
+  if (!openGrade || !pickPlan(plansFor(set, openGrade, defs, prices))) openGrade = pickGrade(set, defs, prices, null, availCoins()).g || defaultTier(set, sum?.score || 0);
 
   let head = null;
   if (sum) {
     const top = set.grades[set.grades.length - 1]?.score || 1;
     head = h('div', {}, [
       h('div', {}, [t('hd.line', { c: sum.collected, r: set.required }), h('b', { text: fmt(sum.score) }), t('hd.line2', { g: sum.grade || '—', e: sum.earned, m: sum.maxTokens })]),
+      sum.collected < set.required && !set.floor ? h('div', { class: 'note warn', text: t('hd.incomplete', { n: set.required - sum.collected }) }) : null,
       h('div', { class: 'note', text: sum.next ? t('hd.next', { g: sum.next.g, n: fmt(sum.need) }) + (sum.nextPaying && sum.nextPaying !== sum.next ? t('hd.nextPay', { g: sum.nextPaying.g, n: fmt(sum.needPaying) }) : '') : t('hd.top') }),
       h('div', { class: 'prog' }, [h('i', { style: `width:${Math.min(100, (sum.score / top) * 100).toFixed(1)}%` })]),
+      scoreSplit(sum),
       inGameRow(set, sum),
     ]);
   }
@@ -540,8 +828,9 @@ async function renderDetail() {
   let body;
   if (set.filter?.unsupported && !set.sol) {
     body = h('div', { class: 'plan note', text: t('untrackable.long') });
-  } else if (set.sol && openGrade) {
-    body = solutionBox(set, planFromTier(set, openGrade, defs, prices), img, sum);
+  } else if (set.sol && openGrade && pickPlan(plansFor(set, openGrade, defs, prices))) {
+    const pl = plansFor(set, openGrade, defs, prices);
+    body = solutionBox(set, pickPlan(pl), img, sum, pl);
   } else if (defs) {
     body = cheapestBox(set, defs, saved, prices);
   } else {
@@ -553,7 +842,7 @@ async function renderDetail() {
   // EA'dan gelen tüm kartlar (eşitlendiyse)
   let list = null;
   if (defs) {
-    const topIds = new Set(countedOf(set, defs).map((d) => d.def));
+    const topIds = new Set((sum?.lineup || countedOf(set, defs)).map((d) => d.def));
     const row = (d) => h('div', { class: 'pl' + (d.col ? ' col' : '') }, [
       icon(img.portrait(baseOf(d.def)), 'face'),
       h('span', { class: 'r', text: d.r || '' }),
@@ -765,6 +1054,23 @@ $('syncAll').addEventListener('click', () => openSyncConfirm(false));
 $('syncTab').addEventListener('click', () => openSyncConfirm(true));
 $('diag').addEventListener('click', openDiag);
 $('buys').addEventListener('click', openBuys);
+// İki tık: ilk tık onay ister (3 sn), ikincisi bu hesabın tüm "oyundaki derece" kayıtlarını siler
+let resetArm = null;
+$('resetGraded').addEventListener('click', async () => {
+  const b = $('resetGraded');
+  if (!resetArm) {
+    b.textContent = t('resetGraded.confirm');
+    b.classList.add('dan');
+    resetArm = setTimeout(() => { resetArm = null; b.textContent = t('btn.resetGraded'); b.classList.remove('dan'); }, 3000);
+    return;
+  }
+  clearTimeout(resetArm);
+  resetArm = null;
+  b.classList.remove('dan');
+  await send({ type: 'resetGraded' });
+  b.textContent = t('resetGraded.done');
+  setTimeout(() => { b.textContent = t('btn.resetGraded'); }, 2000);
+});
 $('stop').addEventListener('click', () => send({ type: 'stop' }));
 $('resetSpent').addEventListener('click', () => send({ type: 'resetGallerySpent' }));
 $('refreshCoins').addEventListener('click', async () => {

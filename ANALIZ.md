@@ -55,7 +55,7 @@ tools/build-gallery-sets.mjs    fut.gg SSR verisinden katalog (düzenli ifade; k
 | Düşük | Gömülü panelde panoya kopyalama; EN modda Türkçe kalan metinler; `fmtDur` saat; fiyat kayıtları büyüyordu | Düzeltildi |
 
 ## 4. Bilinen sınırlar
-- **Bonus etiketleri yok:** not/puan ham puandır. Oyundaki not (aynı kulüp, ilk sahip +%500 …) daha yüksek olabilir. fut.gg çözümleri bonuslarla hesaplanmıştır, bu yüzden "Puan (çözüm / hedef)" hedefin altında görünebilir.
+- **Bonus etiketleri (1.6.0'dan beri hesaplanıyor):** puan = taban + en yüksek 10 etiket bonusu; motor fut.gg dizilimleriyle birebir. Yalnız **İlk Sahip** (+%150–500) EA verisinde olmadığı için sayılamaz; bu kartları olan setlerde oyundaki puan daha yüksek olabilir.
 - **Notlandırma oyunda:** Web App notlandıramaz; "Notlandırdım" işareti kullanıcıya bırakılır.
 - **Galeri seviyesi** Web App verisinde yok, elle giriliyor.
 - **fut.gg çözümleri kişiselleştirilmemiş:** sıfırdan hesaplanıyor. Sende güçlü kartlar varsa daha az kartla aynı nota ulaşılabilir.
@@ -67,7 +67,7 @@ tools/build-gallery-sets.mjs    fut.gg SSR verisinden katalog (düzenli ifade; k
 - **Katalog kaynağı:** fut.gg sayfa yapısı ya da erişim politikası değişirse günlük iş başarısız olur (dosya yazılmaz, son katalog kullanılmaya devam eder).
 
 ## 5. Sonraki adımlar (önerilen, bu sürümde yok)
-- **Bonus etiket motoru:** fut.gg set sayfalarındaki `tags` (tiers + rules) kataloğa eklenir; kartlara ülke / seviye / pozisyon eklenir; not tahmini oyuna yaklaşır.
+- ~~**Bonus etiket motoru**~~ — 1.6.0'da yapıldı (`setScore`, `bestLineup`, katalog `tags` + kart özellikleri, günlük öz denetim).
 - **Kişiselleştirilmiş en ucuz yol:** bonus motoruna bağlı.
 - **Kod tekrarı:** eklenti ve userscript'te görev ve arayüz kodu tekrar ediyor. Ortak modül + bundler (esbuild) ile tek kaynaktan iki çıktı.
 - **Katalog geçmişi:** günlük katalog commit'leri main'i büyütür; ileride ayrı bir `catalog` dalı ya da Release varlığı.

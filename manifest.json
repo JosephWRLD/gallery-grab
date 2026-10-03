@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "minimum_chrome_version": "111",
   "name": "Gallery Grab",
-  "version": "1.5.6",
+  "version": "1.6.0",
   "description": "FC Web App: FUT Galeri setleri, notlar ve eksik kartları en ucuzdan alma.",
   "permissions": [
     "storage",
