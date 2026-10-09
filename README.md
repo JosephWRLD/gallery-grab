@@ -21,7 +21,7 @@
 <table>
 <tr>
 <td width="33%"><b>🖼️ Galeri ekranı</b><br>126 set, lig sekmeleri, set puanı ve D–S notları</td>
-<td width="33%"><b>💡 fut.gg çözümleri</b><br>Her not için en ucuz kart listesi; sende olanlar düşülür</td>
+<td width="33%"><b>💡 İki çözücü</b><br>fut.gg'nin çözümü ya da sendeki kartları bedava sayan Gallery Grab çözümü</td>
 <td width="33%"><b>🛡️ Güvenli alım</b><br>Kart başı fiyat sınırı, bütçe, coin ve transfer listesi kontrolü</td>
 </tr>
 <tr>
@@ -29,12 +29,17 @@
 <td><b>🔄 Günlük katalog</b><br>Her gün 21:00'de (TR) GitHub'dan güncellenir</td>
 <td><b>🌐 Türkçe / English</b><br>Bayraklı dil seçici</td>
 </tr>
+<tr>
+<td><b>📋 Genel sekmesi</b><br>En ucuz sonraki token, tamamlanmaya en yakın setler, bütçeyle en çok token</td>
+<td><b>🧺 Çoklu seçim</b><br>Setleri seç, <b>Sırayla al</b> her seti eşitleyip ulaşılabilir en yüksek notla alır</td>
+<td><b>🧾 Son alımlar</b><br>Galeriden alınan son 200 kart: set, ödenen ve fut.gg fiyatı</td>
+</tr>
 </table>
 
 ## Nasıl çalışır
 
 1. **Tümünü eşitle**: setlerin toplanma durumunu EA'dan okur.
-2. Bir sete tıkla, not sekmesini (D·C·B·A·S) seç.
+2. **Genel** sekmesindeki önerilerden birini ya da bir seti aç, not sekmesini (D·C·B·A·S) seç.
 3. **Eşitle + güncel fiyat**, ardından **Bu çözümü al**. Eksik kartlar pazardaki güncel en ucuz ilandan alınır.
 4. Token'ı almak için seti **oyunda** (konsol / PC) Galeri'den notlandır. Web App notlandıramaz.
 
@@ -71,21 +76,31 @@ Sorun, hata ya da öneri için: **Discord `yusuflnx`** (Galeri ekranının sağ 
 
 - **Setler lig sekmeleriyle:** Premier League / Barclays WSL, LALIGA / Liga F, Bundesliga, Ligue 1, Serie A, Ligler, Nadirlikler (126 set). Her kartta `toplanan / gereken`, set puanı, ulaşılan not (D·C·B·A·S) ve alt alta: sonraki token, kazanılan, şu an alınabilen token ve puan, en fazla token.
 - **Üst şerit:** galeri seviyesi (oyundan elle girilir, çünkü Web App bu bilgiyi vermiyor), toplam galeri puanı, kazanılabilen puan, kazanılan / şu an alınabilen / en fazla token, tamamlanan set, **oyunda notlandırılacak** setler.
-- **Tümünü eşitle:** tüm setlerin toplanma durumunu EA'dan okur (Web App'in "konsept oyuncu" araması her kart için `isCollected` ve `gradingScore` döndürüyor). Önce kaç set eşitleneceğini ve tahmini süreyi sorar; son 6 saatte eşitlenenleri atlayabilir. Tek bir set hata verirse bir kez daha dener, olmazsa atlayıp devam eder.
-- **Set detayı (fut.gg çözümleri):** her not için fut.gg'nin önerdiği en ucuz kart çözümü. Sende olan kartlar ✓ ile işaretlenir ve maliyetten düşülür. **Eşitle + güncel fiyat** eksik kartların pazardaki güncel fiyatına bakar; **Bu çözümü al** onaydan sonra eksikleri alır.
+- **Genel sekmesi** (galeri bununla açılır): tüm galeriden öneri listeleri. Her satırda kazanılacak token, alınacak kart sayısı, maliyet ve %5 vergi görünür; **+** ile set o not hedefli çoklu seçime eklenir.
+  - **En ucuz sonraki token:** her setin token başına en ucuz sonraki notu.
+  - **Tamamlanmaya en yakın:** boş yuva sayısı, doldurma maliyeti ve eksik kartların yüzleri.
+  - **S şu an mümkün:** en yüksek notu pazarda ulaşılabilen setler.
+  - **Bütçemle en çok token:** coin'inle (ya da kalan galeri bütçesiyle) en çok token veren seçim, tek düğmeyle çoklu seçime eklenir.
+- **Tümünü eşitle:** tüm setlerin toplanma durumunu EA'dan okur (Web App'in "konsept oyuncu" araması her kart için `isCollected` ve `gradingScore` döndürüyor). Önce kaç set eşitleneceğini ve tahmini süreyi sorar; son 6 saatte eşitlenenleri atlayabilir. Tek bir set hata verirse bir kez daha dener, olmazsa atlayıp devam eder. Yanındaki **Sadece {lig}** düğmesi yalnız açık sekmedeki setleri eşitler.
+- **Set detayı (iki çözüm):** her not için **fut.gg** ya da **Gallery Grab** çözümü seçilir. Gallery Grab çözücüsü sendeki kartları bedava sayar, bonus etiketlerini hesaba katar ve notun eşiğine ulaşan en ucuz dizilimi bulur; hangisi ucuzsa işaretlenir. Sende olan kartlar ✓ ile işaretlenir ve maliyetten düşülür. **Eşitle + güncel fiyat** eksik kartların pazardaki güncel fiyatına bakar; **Bu çözümü al** onaydan sonra eksikleri alır; alım anında çözüm değişmişse almaz, detayı yenilemeni ister.
+- **Çoklu seçim ve Sırayla al:** seçilen setler kuyrukta tek tek alınır. Her setten önce set EA'dan yeniden eşitlenir ve not, eksik kartların canlı fiyatına göre ulaşılabilir en yüksek not olarak seçilir. **Durdur** her an çalışır; atlanan kartlara sonunda bir kez daha dönülür.
 - **Alım güvenliği:**
-  - Her kart için **fiyat sınırı** var: canlı fiyat bakıldıysa canlı fiyatın %25 fazlası, bakılmadıysa fut.gg fiyatının 2 katı (en az +2.000). Üstüne "Kart başına en fazla" ayarı (varsayılan 50.000) gelir.
+  - Her kart için **fiyat sınırı** var: canlı fiyat bakıldıysa canlı fiyatın %25 fazlası, bakılmadıysa fut.gg fiyatının 1,4 katı ya da fut.gg + 2.000 (hangisi büyükse). İstersen üstüne "Kart başına en fazla" sınırı koyabilirsin (varsayılan yok).
   - Sınırı aşan kart alınmaz; raporda gerçek fiyatıyla yazılır ve bir sonraki denemede o fiyat esas alınır.
   - Ayrıca **Galeri bütçesi** (galeri harcaması bu tutara ulaşınca durur) ve coin bakiyesi kontrolü var.
   - Transfer listesi dolunca (100) alım durur.
+  - Özel kartlar pazarda kartın kendi nadirliğiyle aranır; oyuncunun başka sürümü yanlışlıkla alınmaz.
   - Holografik ve Başlangıç setlerinde sahiplik Web App'ten doğrulanamadığı için eşitleme ve alım kapalıdır; bu setler yalnız bilgi olarak gösterilir.
 - **Alımdan sonra:** kart varsayılan olarak **satışa konur**. Satış fiyatı ödenen ya da fut.gg fiyatı olabilir, ±%20 ayarlanabilir ve ilan süresi seçilebilir. Kart yine toplanmış sayılır; gerçek maliyet ≈ %5 vergidir. İstenirse kart transfer listesinde ya da unassigned'da bırakılır.
 - **Oyunda notlandırma:** Web App setleri notlandıramaz. Kart aldığın setler ve çözüm kartlarının hepsi sende olan setler "oyunda notlandır" rozetiyle işaretlenir. Notlandırınca detaydaki **✓ Notlandırdım** düğmesiyle işareti kaldırırsın.
 - **Token planlayıcı:** hedef token (Hall of FUT: 300 / 400 / 500 David Luiz / 750 Pato–Hulk) ya da coin bütçesi girersin. Her setten en fazla bir not seçen en ucuz plan hesaplanır; **Planı al** setleri sırayla alır.
+- **Son alımlar:** galeriden alınan son 200 kart; zaman, set, ödenen fiyat ve fut.gg fiyatıyla.
+- **Hesaba özel veri:** EA hesabı değişince seçilen notlar, notlandırılacaklar, harcama ve son alımlar o hesaba göre ayrı tutulur.
+- **Teşhis:** setler eşitlendiği hâlde 0/N görünüyorsa EA'nın ne döndürdüğünü raporlar (alım yapmaz, kişisel bilgi içermez); **Kopyala** ile Discord'dan gönderebilirsin.
 - **Sıralama / filtre, Coin ↻, pazar rozeti:** pazarda zaten toplanmış kartlara "✓ Galeride" rozeti gelir.
 - **Katalog:** `data/gallery-sets.json`, `tools/build-gallery-sets.mjs` ile fut.gg'den üretilir. GitHub Actions bunu **her gün 21:00'de (TR)** yeniler. Eklenti 21:40'tan sonra ilk açılışta yeni sürümü çeker; indirme başarısız olursa 1 saat sonra yeniden dener, ağ yoksa gömülü kopyayı kullanır. Setin fiyatları 2 günden eskiyse detayda uyarı çıkar.
 
-**Puan:** taban puan + oyunun bonus etiketleri (aynı kulüp/ülke/lig, TOTW, holografik, mevki etiketleri vb.; en yüksek 10'u sayılır). **Bilinen sınır:** **İlk Sahip** bonusu (paketten çıkan kartlar, +%150–500) EA verisinde yok; bu kartları olan setlerde oyundaki puan daha yüksek olabilir.
+**Puan:** eklentinin kendi puan motoru taban puanı ve oyunun 21 bonus etiketini (aynı/farklı kulüp-ülke-lig, bronz/gümüş/altın, TOTW, holografik, mevki etiketleri vb.; en yüksek 10'u sayılır) hesaplar. Kurallar katalogla fut.gg'den gelir; detayda "taban + bonus" dökümü görünür. **Bilinen sınır:** **İlk Sahip** bonusu (paketten çıkan kartlar, +%150–500) EA verisinde yok; bu kartları olan setlerde oyundaki puan daha yüksek olabilir.
 
 </details>
 
