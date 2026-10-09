@@ -5,6 +5,20 @@ Sürüm numarası `manifest.json` ile aynıdır.
 
 > Not: 1.1.1 ve öncesi tek bir commit içinde repoya alınmıştı. 1.2.0'dan itibaren her sürüm ayrı commit + `v*` etiketi olarak işaretlenir.
 
+## [2.4.0] / [1.7.0] — 2026-10-09
+
+### Eklendi
+- **"Genel" sekmesi** (lig sekmelerinin başında): tüm galeriden öneri listeleri. FUTGenie'nin Overview ekranından
+  farkı, her satırda kazanılacak token, alınacak kart sayısı, alış maliyeti ve %5 vergi görünür; satıra tıklayınca
+  set detayı o not seçili açılır, **+** ile set (o not hedefli) çoklu seçime eklenir.
+  - **En ucuz sonraki token:** her setin token başına en ucuz sonraki notu, ilk 8.
+  - **Tamamlanmaya en yakın:** eşitlenmiş setlerde boş yuva sayısı, boşlukları en ucuz kartlarla doldurma maliyeti
+    (canlı fiyat varsa o), doldurunca kazanılan token ve eksik kartların yüzleri. Tıklayınca "Eksik" süzgeciyle açılır.
+  - **S şu an mümkün:** en yüksek notu pazarda ulaşılabilen ve henüz kazanılmamış setler, ucuzdan pahalıya.
+  - **Bütçemle en çok token:** kullanılabilir coin'le (galeri bütçesi varsa kalanı) en çok token veren set/not
+    seçimi; tek düğmeyle hepsi hedef notlarıyla çoklu seçime eklenir → "Sırayla al".
+- Galeri her açılışta "Genel" sekmesiyle başlar; Genel sekmesinde üst özetteki "bu sekme" satırları gizlenir.
+
 ## [2.3.0] / [1.6.0] — 2026-10-04
 
 ### Eklendi

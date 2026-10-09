@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gallery Grab
 // @namespace    https://github.com/JosephWRLD/gallery-grab
-// @version      2.3.0
+// @version      2.4.0
 // @description  FC Web App: FUT Galeri setleri, notlar, fut.gg çözümleri, token planlayıcı ve eksik kartları alma; oyuncu listesinden en ucuz kart alma
 // @author       JosephWRLD — Discord: yusuflnx
 // @license      PolyForm-Noncommercial-1.0.0 (ticari kullanım/satış yasak)
@@ -754,6 +754,32 @@
     'ov.sets': 'Tamamlanan set',
     'ov.tab': 'bu sekme: {v}',
     'ov.synced': '{n}/{m} set eşitlendi',
+    'tab.overview': 'Genel',
+    'tab.overview.title': 'Tüm galeriden öneriler: en ucuz token, tamamlanmaya en yakın setler, en yüksek not, bütçeyle en çok token',
+    'ovl.cheap': 'En ucuz sonraki token',
+    'ovl.cheap.sub': 'Her setin token başına en ucuz sonraki notu. Maliyet: sende olmayan kartların alışı; aynı fiyattan geri satınca kayıp ≈ %5 vergi. Tıkla → o not açık detay.',
+    'ovl.close': 'Tamamlanmaya en yakın',
+    'ovl.close.sub': 'Eşitlenmiş setlerde boş yuvalar. Maliyet: boşlukları sende olmayan en ucuz kartlarla doldurmak (canlı fiyat varsa o, yoksa fut.gg).',
+    'ovl.close.empty': 'Eşitlenmiş ve dolmamış set yok — önce setleri eşitle.',
+    'ovl.top': '{g} şu an mümkün',
+    'ovl.top.sub': 'En yüksek not pazarda ulaşılabilen ve henüz kazanmadığın setler, ucuzdan pahalıya.',
+    'ovl.plan': 'Bütçemle en çok token',
+    'ovl.plan.sub': 'Kullanılabilir coin ({c}) ile en çok token veren set/not seçimi (setten en fazla bir not; yalnız eşitlenmiş setler).',
+    'ovl.plan.none': 'Coin bilinmiyor — alttaki ↻ ile coinini yenile.',
+    'ovl.plan.zero': 'Bu bütçeyle alınabilen token yok.',
+    'ovl.plan.tot': '+{t} token · {c} alış · {tax} vergi',
+    'ovl.plan.add': '{n} seti çoklu seçime ekle',
+    'ovl.plan.added': 'Çoklu seçime eklendi ✓',
+    'ovl.add': 'Çoklu seçime ekle (bu not hedef)',
+    'ovl.in': 'Çoklu seçimde — çıkarmak için tıkla',
+    'ovl.row': '+{gain} token · {n} kart',
+    'ovl.ready': 'kart gerekmez',
+    'ovl.left': '{n} eksik',
+    'ovl.fill': '+{gain} token',
+    'ovl.fill.part': '{k}/{n} kartın fiyatı biliniyor',
+    'ovl.empty': 'Gösterilecek set yok.',
+    'ovl.more': '+{n} set daha',
+    'ovl.tax': 'vergi {t}',
     'btn.planner': 'Token planlayıcı',
     'btn.planner.title': 'Hedef token ya da bütçeye göre en ucuz set planı',
     'btn.syncAll': 'Tümünü eşitle',
@@ -1119,6 +1145,32 @@
     'ov.sets': 'Completed sets',
     'ov.tab': 'this tab: {v}',
     'ov.synced': '{n}/{m} sets synced',
+    'tab.overview': 'Overview',
+    'tab.overview.title': 'Suggestions across the whole gallery: cheapest tokens, closest to complete, top grade, most tokens for your budget',
+    'ovl.cheap': 'Cheapest next tokens',
+    'ovl.cheap.sub': "Each set's next grade with the lowest cost per token. Cost: buying the cards you don't own; relisting at the same price loses ≈ 5% tax. Click → details with that grade open.",
+    'ovl.close': 'Closest to complete',
+    'ovl.close.sub': "Empty slots in synced sets. Cost: filling them with the cheapest cards you don't own (live price if known, otherwise fut.gg).",
+    'ovl.close.empty': 'No synced sets with empty slots — sync your sets first.',
+    'ovl.top': '{g} possible now',
+    'ovl.top.sub': "Sets whose top grade is reachable on the market right now and you haven't earned yet, cheapest first.",
+    'ovl.plan': 'Most tokens for my budget',
+    'ovl.plan.sub': 'The set/grade picks that give the most tokens with your available coins ({c}) (at most one grade per set; synced sets only).',
+    'ovl.plan.none': 'Coins unknown — refresh them with ↻ below.',
+    'ovl.plan.zero': 'No tokens reachable with this budget.',
+    'ovl.plan.tot': '+{t} tokens · {c} to buy · {tax} tax',
+    'ovl.plan.add': 'Add {n} sets to multi-select',
+    'ovl.plan.added': 'Added to multi-select ✓',
+    'ovl.add': 'Add to multi-select (this grade as target)',
+    'ovl.in': 'In multi-select — click to remove',
+    'ovl.row': '+{gain} tokens · {n} cards',
+    'ovl.ready': 'no cards needed',
+    'ovl.left': '{n} missing',
+    'ovl.fill': '+{gain} tokens',
+    'ovl.fill.part': 'price known for {k}/{n} cards',
+    'ovl.empty': 'No sets to show.',
+    'ovl.more': '+{n} more sets',
+    'ovl.tax': 'tax {t}',
     'btn.planner': 'Token planner',
     'btn.planner.title': 'Cheapest set plan for a token target or budget',
     'btn.syncAll': 'Sync all',
@@ -2280,6 +2332,57 @@
     return { score, earned, reach, reachCost, reachTax: Math.ceil(reachCost * TAX), max, done, total: sets.length, synced, reachPts };
   }
 
+  // ---------------------------------------------------------------- "Genel" sekmesi listeleri
+  // FUTGenie'nin Overview ekranının geliştirilmiş hâli. Dönen listeler:
+  //  cheap: token başı en ucuz sonraki not (set başına bir satır; bestNext), en fazla n
+  //  close: tamamlanmaya en yakın eşitlenmiş setler — boş yuvaları en ucuz kartlarla doldurma maliyeti + kazandırdığı token
+  //  top:   en yüksek not (S) şu an pazarda ulaşılabilen ve henüz kazanılmamış setler, ucuzdan pahalıya
+  //  plan:  coins ile en çok token (planTokens bütçe modu), yalnız eşitlenmiş setler (alımda eşitlenmemiş set atlanır); coins null → null
+  // "Hazır" (alınacak kart yok) seçenekler cheap/top'a girmez, onlar "Oyunda notlandırılacak"ta.
+  function overviewLists(sets, sums = {}, defsOf = () => null, { coins = null, live = null, n = 8 } = {}) {
+    const ok = sets.filter((x) => x.sol?.tiers?.length && !x.filter?.unsupported);
+    const opts = new Map(ok.map((x) => [x.id, tierOptions(x, defsOf(x.id))]));
+    const per = (o) => (o.cost + 1) / o.gain;
+
+    const cheap = [];
+    for (const x of ok) {
+      const c = opts.get(x.id).filter((o) => !o.ready);
+      if (c.length) cheap.push({ set: x, ...c.reduce((a, o) => (per(o) < per(a) ? o : a)) });
+    }
+    cheap.sort((a, b) => per(a) - per(b) || b.gain - a.gain);
+
+    const top = [];
+    for (const x of ok) {
+      const g = x.grades.at(-1)?.g;
+      const o = opts.get(x.id).find((y) => y.g === g && !y.ready);
+      if (o) top.push({ set: x, ...o });
+    }
+    top.sort((a, b) => a.cost - b.cost || b.gain - a.gain);
+
+    // Tamamlanmaya en yakın: yalnız eşitlenmiş ve dolmamış setler; fiyat = canlı (varsa) ya da fut.gg
+    const close = sets
+      .filter((x) => !x.filter?.unsupported && defsOf(x.id) && sums[x.id] && sums[x.id].collected < sums[x.id].required)
+      .map((x) => ({ set: x, have: sums[x.id].collected, req: sums[x.id].required, left: sums[x.id].required - sums[x.id].collected }))
+      .sort((a, b) => a.left - b.left || b.have - a.have || a.set.name.localeCompare(b.set.name))
+      .slice(0, n);
+    for (const r of close) {
+      const defs = defsOf(r.set.id);
+      const prices = {};
+      for (const c of r.set.sol?.cards || []) if (c[5] > 0) prices[c[0]] = c[5];
+      for (const d of defs) if (live && live[d.def] > 0) prices[d.def] = live[d.def];
+      const f = cheapestFill(r.set, defs, prices, r.left);
+      const before = summarise(r.set, defs);
+      r.pick = f.pick;
+      r.cost = f.coins;
+      r.tax = f.tax;
+      r.priced = f.pick.length;   // < left → bazı kartların fiyatı bilinmiyor (tahmin eksik)
+      r.gain = Math.max(0, f.after.earned - before.earned);
+    }
+
+    const plan = coins == null ? null : planTokens(ok.map((x) => opts.get(x.id).filter((o) => !o.ready && !o.est)), { budget: Math.max(0, coins) });
+    return { cheap: cheap.slice(0, n), close, top: top.slice(0, n), topAll: top.length, plan };
+  }
+
   // ---------------------------------------------------------------- ızgara sıralama / filtre
   // sums: gallerySummary, next: Map(setId → bestNext seçeneği)
   // Etiketler i18n sözlüğünde: 'sort.<anahtar>' / 'show.<anahtar>'
@@ -2759,7 +2862,7 @@
     stats: store.get('gSyncStats', {}),
     spent: store.get('gSpent', 0),
     view: store.get('gView', 'gallery'),
-    tab: store.get('gTab', null),
+    tab: 'overview',   // açılışta hep "Genel" sekmesi (OV_TAB)
     sort: store.get('gSort', ''),
     show: store.get('gShow', 'all'),
     defs: new Map(),
@@ -3663,7 +3766,8 @@
         h('button', { text: L('retry'), onclick: () => refreshCatalog(true) }));
       return;
     }
-    if (!gal.cat.categories.some((c) => c.id === gal.tab)) gal.tab = gal.cat.categories[0].id;
+    if (gal.tab !== OV_TAB && !gal.cat.categories.some((c) => c.id === gal.tab)) gal.tab = OV_TAB;
+    const isOv = gal.tab === OV_TAB;
     fxTrack();
     if (FX.follow && run.running && fxRun()?.cur && fxRun().cur !== FX.cur && fxRun().ids.length > 1) {
       FX.cur = fxRun().cur;
@@ -3674,8 +3778,9 @@
     const sums = gal.summary;
     const next = new Map();
     for (const s of gal.cat.sets) { const n = bestNext(s, gal.defs.get(s.id) || null); if (n) next.set(s.id, n); }
-    const all = gal.cat.sets.filter((s) => s.cat === gal.tab).length;
-    const sets = sortFilterSets(gal.cat.sets.filter((s) => s.cat === gal.tab), sums, next, gal.sort, gal.show, gal.toGrade);
+    const inTab = (s) => isOv || s.cat === gal.tab;
+    const all = gal.cat.sets.filter(inTab).length;
+    const sets = isOv ? [] : sortFilterSets(gal.cat.sets.filter(inTab), sums, next, gal.sort, gal.show, gal.toGrade);
     gal.next = next;
 
     const card = (set) => {
@@ -3705,7 +3810,7 @@
       if (fx === 'just' || fx === 'fail') el.style.setProperty('--fxj', `-${Date.now() - FX.just.get(set.id)}ms`);
       return el;
     };
-    const synced = gal.cat.sets.filter((s) => s.cat === gal.tab && sums[s.id]);
+    const synced = gal.cat.sets.filter((s) => inTab(s) && sums[s.id]);
     const earned = synced.reduce((a, s) => a + sumEarned(s, sums[s.id]), 0);
     const sel = (opts, val, on) => { const s = h('select', { onchange: (e) => on(e.target.value) }, opts.map(([k, x]) => h('option', { value: k, text: x }))); s.value = val; return s; };
 
@@ -3738,14 +3843,14 @@
       ]),
       overviewStrip(sums),
       h('div', { class: 'top' }, [
-        h('div', { class: 'tabs' }, gal.cat.categories.map((c) => h('button', { class: c.id === gal.tab ? 'on' : '', text: c.name, onclick: () => { galSet('tab', c.id, 'gTab'); render(); } }))),
+        h('div', { class: 'tabs' }, [{ id: OV_TAB, name: L('tab.overview'), title: L('tab.overview.title') }, ...gal.cat.categories].map((c) => h('button', { class: c.id === gal.tab ? 'on' : '', text: c.name, title: c.title || '', onclick: () => { galSet('tab', c.id, 'gTab'); render(); } }))),
         h('button', { class: gal.sel.on ? 'dan' : 'b', text: L('sel.mode'), title: L('sel.mode.title'), onclick: () => { gal.sel.on = !gal.sel.on; gal.selConfirm = false; saveSel(); render(); } }),
         taskBtn({ class: 'b', text: L('btn.planner'), title: L('btn.planner.title'), onclick: () => { gal.modal = 'planner'; gal.pl.confirm = false; runPlanner(); render(); } }),
         taskBtn({ class: 'b', text: L('btn.syncAll'), title: L('btn.syncAll.title'), onclick: () => { gal.syncTab = false; gal.modal = 'sync'; render(); } }),
-        taskBtn({ class: 'g stab', text: L('btn.syncTab', { name: tabName().split(' / ')[0] }), title: L('btn.syncTab.title', { name: tabName() }), onclick: () => { gal.syncTab = true; gal.modal = 'sync'; render(); } }),
+        isOv ? null : taskBtn({ class: 'g stab', text: L('btn.syncTab', { name: tabName().split(' / ')[0] }), title: L('btn.syncTab.title', { name: tabName() }), onclick: () => { gal.syncTab = true; gal.modal = 'sync'; render(); } }),
       ]),
       h('div', { class: 'sub' }, [
-        h('span', {}, [L('tab.info', { synced: synced.length, all }), h('b', { text: String(earned) }), L('tab.max', { max: gal.cat.sets.filter((x) => x.cat === gal.tab).reduce((a, x) => a + x.maxTokens, 0) })]),
+        h('span', {}, [L('tab.info', { synced: synced.length, all }), h('b', { text: String(earned) }), L('tab.max', { max: gal.cat.sets.filter(inTab).reduce((a, x) => a + x.maxTokens, 0) })]),
         h('span', { text: gal.catErr ? L('cat.fail', { d: catDate(), e: gal.catErr }) : L('cat', { d: catDate() }) }),
         h('button', { class: 'g', text: L('btn.catRefresh'), onclick: () => refreshCatalog(true) }),
         h('button', { class: 'g', text: L('btn.diag'), title: L('btn.diag.title'), onclick: () => { gal.modal = 'diag'; render(); } }),
@@ -3755,12 +3860,12 @@
           clearTimeout(gal.resetArm); gal.resetArm = null; resetGraded(); status(L('resetGraded.done'), 'ok');
         } }),
         store.get('gAcct', null)?.name ? h('span', { class: 'mut', text: L('acct.label', { name: store.get('gAcct', null).name }) }) : null,
-        h('label', {}, [L('sort') + ' ', sel(sortOptions(L), gal.sort, (x) => { galSet('sort', x, 'gSort'); render(); })]),
-        h('label', {}, [L('show') + ' ', sel(showOptions(L), gal.show, (x) => { galSet('show', x, 'gShow'); render(); })]),
+        isOv ? null : h('label', {}, [L('sort') + ' ', sel(sortOptions(L), gal.sort, (x) => { galSet('sort', x, 'gSort'); render(); })]),
+        isOv ? null : h('label', {}, [L('show') + ' ', sel(showOptions(L), gal.show, (x) => { galSet('show', x, 'gShow'); render(); })]),
       ]),
       fxStrip(),
       gal.sel.on ? selBar() : null,
-      h('div', { class: 'grid' }, sets.length ? sets.map(card) : [h('div', { class: 'empty', text: all ? L('grid.emptyFilter') : L('grid.empty') })]),
+      isOv ? ovLists(sums) : h('div', { class: 'grid' }, sets.length ? sets.map(card) : [h('div', { class: 'empty', text: all ? L('grid.emptyFilter') : L('grid.empty') })]),
     );
 
     // alt çubuk
@@ -3791,6 +3896,81 @@
     );
 
     g.over.replaceChildren(...[gal.openId ? detailView() : null, gal.modal === 'sync' ? syncModal() : gal.modal === 'planner' ? plannerModal() : gal.modal === 'diag' ? diagModal() : gal.modal === 'buys' ? buysModal() : null].filter(Boolean));
+  }
+
+  // ---------------------------------------------------------------- "Genel" sekmesi
+  // FUTGenie Overview'dan farkı: her listede kaç token / kaç kart / maliyet + vergi, set başına "çoklu seçime ekle",
+  // tamamlanmaya en yakında doldurma maliyeti + eksik kart yüzleri, bütçeye göre en çok token planı.
+  const OV_TAB = 'overview';
+  function openAt(id, g = null, filter = 'all') {
+    gal.openId = id; gal.openGrade = g; gal.confirmBuy = false; gal.filter = filter; gal.listOpen = false; render();
+  }
+  // Seti çoklu seçime ekle/çıkar; g verilirse sete özel hedef derece olur
+  function selToggle(id, g = null) {
+    const S = gal.sel;
+    if (S.ids.includes(id)) { S.ids = S.ids.filter((x) => x !== id); delete S.grade[id]; }
+    else { S.ids = [...S.ids, id]; if (g) S.grade[id] = g; S.on = true; }
+    gal.selConfirm = false;
+    saveSel();
+    render();
+  }
+  function ovLists(sums) {
+    const S = gal.sel;
+    const coins = availCoins();
+    const R = overviewLists(gal.cat.sets, sums, (id) => gal.defs.get(id) || null, { coins, live: livePrices(), n: 8 });
+    const panel = (title, sub, rows, empty) => h('section', { class: 'ovp' }, [
+      h('h3', { text: title }), h('div', { class: 'mut', text: sub }),
+      rows.length ? h('div', { class: 'ovrows' }, rows) : h('div', { class: 'empty', text: empty }),
+    ]);
+    const addBtn = (id, g) => {
+      const on = S.ids.includes(id);
+      return h('button', { class: 'add' + (on ? ' on' : ''), text: on ? '✓' : '+', title: on ? L('ovl.in') : L('ovl.add'),
+        onclick: (e) => { e.stopPropagation(); selToggle(id, g); } });
+    };
+    const optRow = (o) => h('div', { class: 'ovr', onclick: () => openAt(o.set.id, o.g) }, [
+      setArt(o.set),
+      h('div', { class: 'n' }, [h('b', { text: o.set.name }), h('small', { text: L('ovl.row', { gain: o.gain, n: o.missing }) + (o.est ? L('pl.est') : '') })]),
+      h('span', { class: 'gg ' + o.g, text: o.g }),
+      h('div', { class: 'c' }, [h('b', { text: KF(o.cost) }), h('small', { text: L('ovl.tax', { t: KF(o.tax) }) })]),
+      addBtn(o.set.id, o.g),
+    ]);
+    const closeRow = (r) => h('div', { class: 'ovr', onclick: () => openAt(r.set.id, null, 'missing') }, [
+      setArt(r.set),
+      h('div', { class: 'n' }, [
+        h('b', { text: r.set.name }),
+        h('small', {}, [L('ovl.left', { n: r.left }), r.gain ? h('span', { class: 'gn', text: ' · ' + L('ovl.fill', { gain: r.gain }) }) : null]),
+        r.pick.length ? h('div', { class: 'faces' }, r.pick.slice(0, 6).map((d) => icon(img.portrait(baseOf(d.def)), 'face'))) : null,
+      ]),
+      h('span', { class: 'frac', text: `${r.have}/${r.req}` }),
+      h('div', { class: 'c', title: r.priced < r.left ? L('ovl.fill.part', { k: r.priced, n: r.left }) : '' }, [
+        h('b', { text: (r.priced < r.left ? '≥ ' : '') + KF(r.cost) }), h('small', { text: L('ovl.tax', { t: KF(r.tax) }) }),
+      ]),
+      addBtn(r.set.id, null),
+    ]);
+    let plan;
+    if (!R.plan) plan = [h('div', { class: 'empty', text: L('ovl.plan.none') })];
+    else if (!R.plan.picks.length) plan = [h('div', { class: 'empty', text: L('ovl.plan.zero') })];
+    else {
+      const just = Date.now() - (gal.ovAdded || 0) < 4000;
+      plan = [
+        h('div', { class: 'ovtot' }, [
+          h('b', { text: L('ovl.plan.tot', { t: R.plan.tokens, c: KF(R.plan.cost), tax: KF(R.plan.tax) }) }),
+          taskBtn({ class: 'b', text: just ? L('ovl.plan.added') : L('ovl.plan.add', { n: R.plan.picks.length }), onclick: () => {
+            for (const o of R.plan.picks) { if (!S.ids.includes(o.setId)) S.ids.push(o.setId); S.grade[o.setId] = o.g; }
+            S.on = true; gal.selConfirm = false; gal.ovAdded = Date.now(); saveSel(); render();
+            ui.galEl.querySelector('.selbar')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          } }),
+        ]),
+        h('div', { class: 'ovrows' }, R.plan.picks.map((o) => optRow({ set: gal.cat.sets.find((x) => x.id === o.setId), ...o }))),
+      ];
+    }
+    const more = R.topAll - R.top.length;
+    return h('div', { class: 'ovl' }, [
+      panel(L('ovl.cheap'), L('ovl.cheap.sub'), R.cheap.map(optRow), L('ovl.empty')),
+      panel(L('ovl.close'), L('ovl.close.sub'), R.close.map(closeRow), L('ovl.close.empty')),
+      panel(L('ovl.top', { g: GRADES.at(-1) }), L('ovl.top.sub'), [...R.top.map(optRow), more > 0 ? h('div', { class: 'mut', style: 'padding:6px 4px', text: L('ovl.more', { n: more }) }) : null].filter(Boolean), L('ovl.empty')),
+      h('section', { class: 'ovp wide' }, [h('h3', { text: L('ovl.plan') }), h('div', { class: 'mut', text: L('ovl.plan.sub', { c: coins == null ? '—' : fmt(coins) }) }), ...plan]),
+    ]);
   }
 
   // ---------------------------------------------------------------- çoklu seçim
@@ -3845,7 +4025,7 @@
         h('span', { class: 'mut', title: L('sel.avail.title'), text: availCoins() == null ? L('sel.avail.none') : L('sel.avail', { c: fmt(availCoins()) }) }),
         h('label', {}, [L('sel.target') + ' ', gsel(S.target, L('sel.target.max'), (v) => { S.target = v || null; gal.selConfirm = false; saveSel(); render(); })]),
         h('span', { style: 'flex:1' }),
-        h('button', { class: 'g', text: L('sel.tabAll'), onclick: () => {
+        gal.tab === OV_TAB ? null : h('button', { class: 'g', text: L('sel.tabAll'), onclick: () => {
           for (const x of gal.cat.sets) if (x.cat === gal.tab && x.sol?.tiers?.length && !x.filter?.unsupported && !S.ids.includes(x.id)) S.ids.push(x.id);
           saveSel(); render();
         } }),
@@ -3874,6 +4054,7 @@
     const defsOf = (id) => gal.defs.get(id) || null;
     const all = overview(gal.cat.sets, sums, defsOf);
     const tb = overview(gal.cat.sets.filter((x) => x.cat === gal.tab), sums, defsOf);
+    const tabV = (v) => (gal.tab === OV_TAB ? '' : L('ov.tab', { v }));
     const box = (label, value, sub, cls = '', title = '') => h('div', { title }, [
       h('div', { class: 'l', text: label }), h('div', { class: 'v ' + cls, text: value }), sub ? h('div', { class: 's', text: sub }) : null,
     ]);
@@ -3885,11 +4066,11 @@
       h('div', { title: L('ov.level.title') }, [h('div', { class: 'l', text: L('ov.level') }), h('div', { class: 'v a' }, [lvIn, h('span', { class: 'of', text: ' / 25' })]),
         h('div', { class: 's', text: lv ? (nm ? L('ov.level.next', { n: nm }) : L('ov.level.max')) : '' })]),
       box(L('ov.score'), fmt(all.score), L('ov.synced', { n: all.synced, m: all.total }), 'g', L('ov.score.title')),
-      box(L('ov.earned'), fmt(all.earned), L('ov.tab', { v: fmt(tb.earned) }), 'g'),
-      box(L('ov.reachPts'), '+' + fmt(all.reachPts), L('ov.tab', { v: '+' + fmt(tb.reachPts) }), 'g', L('ov.reachPts.title')),
-      box(L('ov.reach'), fmt(all.reach), L('ov.reachCost', { c: KF(all.reachCost), t: KF(all.reachTax) }) + ' · ' + L('ov.tab', { v: fmt(tb.reach) }), 'a', L('ov.reach.title')),
-      box(L('ov.max'), fmt(all.max), L('ov.tab', { v: fmt(tb.max) })),
-      box(L('ov.sets'), `${all.done}/${all.total}`, L('ov.tab', { v: `${tb.done}/${tb.total}` })),
+      box(L('ov.earned'), fmt(all.earned), tabV(fmt(tb.earned)), 'g'),
+      box(L('ov.reachPts'), '+' + fmt(all.reachPts), tabV('+' + fmt(tb.reachPts)), 'g', L('ov.reachPts.title')),
+      box(L('ov.reach'), fmt(all.reach), [L('ov.reachCost', { c: KF(all.reachCost), t: KF(all.reachTax) }), tabV(fmt(tb.reach))].filter(Boolean).join(' · '), 'a', L('ov.reach.title')),
+      box(L('ov.max'), fmt(all.max), tabV(fmt(tb.max))),
+      box(L('ov.sets'), `${all.done}/${all.total}`, tabV(`${tb.done}/${tb.total}`)),
       (() => {
         const n = gal.cat.sets.filter((x) => gal.toGrade[x.id] || gal.next?.get(x.id)?.ready).length;
         return h('div', { class: 'click', title: L('ov.toGrade.title'), onclick: () => { galSet('show', 'grade', 'gShow'); render(); } }, [
@@ -4396,6 +4577,34 @@
 #fcgu-panel .srow .snm { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
 #fcgu-panel .srow .gg { font-weight:800; min-width:18px; text-align:center; }
 #fcgu-panel .srow .gg.D { color:#e0772e; } #fcgu-panel .srow .gg.C { color:#c9d1dc; } #fcgu-panel .srow .gg.B { color:#f5c518; } #fcgu-panel .srow .gg.A { color:#3d9bff; } #fcgu-panel .srow .gg.S { color:#a66bff; }
+#fcgu-panel .ovl { display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:12px; align-items:start; }
+#fcgu-panel .ovp { background:linear-gradient(180deg,#14223a,#101b2e); border:1px solid #23324d; border-radius:12px; padding:12px; min-width:0; }
+#fcgu-panel .ovp h3 { margin:0 0 2px; font-size:14px; }
+#fcgu-panel .ovp > .mut { font-size:11px; margin-bottom:8px; }
+#fcgu-panel .ovp .empty { padding:18px 6px; font-size:12px; }
+#fcgu-panel .ovrows { display:flex; flex-direction:column; gap:6px; }
+#fcgu-panel .ovr { display:grid; grid-template-columns:30px minmax(0,1fr) auto auto 26px; gap:8px; align-items:center; padding:7px 8px; border:1px solid #23324d; border-radius:9px; background:rgba(11,19,34,.45); cursor:pointer; font-size:12px; }
+#fcgu-panel .ovr:hover { border-color:#3a5078; }
+#fcgu-panel .ovr .crest, #fcgu-panel .ovr .ph { width:28px; height:28px; font-size:12px; }
+#fcgu-panel .ovr .n { min-width:0; }
+#fcgu-panel .ovr .n b { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#fcgu-panel .ovr .n small { color:#8a97ad; font-size:11px; }
+#fcgu-panel .ovr .n .gn { color:#2fd08a; }
+#fcgu-panel .ovr .gg, #fcgu-panel .ovr .frac { font-weight:800; min-width:18px; text-align:center; }
+#fcgu-panel .ovr .frac { color:#f5c518; }
+#fcgu-panel .ovr .gg.D { color:#e0772e; } #fcgu-panel .ovr .gg.C { color:#c9d1dc; } #fcgu-panel .ovr .gg.B { color:#f5c518; } #fcgu-panel .ovr .gg.A { color:#3d9bff; } #fcgu-panel .ovr .gg.S { color:#a66bff; }
+#fcgu-panel .ovr .c { text-align:right; white-space:nowrap; }
+#fcgu-panel .ovr .c b { display:block; color:#f5c518; }
+#fcgu-panel .ovr .c small { color:#8a97ad; font-size:10.5px; }
+#fcgu-panel .ovr .faces { display:flex; gap:3px; margin-top:3px; }
+#fcgu-panel .ovr .face { width:22px; height:22px; border-radius:5px; background:#16233b; }
+#fcgu-panel .ovr button.add { width:26px; height:26px; padding:0; border-radius:7px; border:1px solid #23324d; background:none; color:#8a97ad; font-weight:800; cursor:pointer; }
+#fcgu-panel .ovr button.add:hover { color:#f5c518; border-color:#f5c518; }
+#fcgu-panel .ovr button.add.on { color:#06261a; background:#2fd08a; border-color:#2fd08a; }
+#fcgu-panel .ovp.wide { grid-column:1 / -1; }
+#fcgu-panel .ovp.wide .ovrows { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); }
+#fcgu-panel .ovtot { display:flex; gap:8px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-bottom:8px; }
+#fcgu-panel .ovtot b { color:#2fd08a; font-size:12.5px; }
 #fcgu-panel .srow .why { color:#f0b43c; font-size:11px; } #fcgu-panel .srow .why.mut { color:#8a97ad; }
 #fcgu-panel .srow button.x { background:none; border:0; color:#8a97ad; padding:0; }
 #fcgu-panel .srow button.x:hover { color:#ef5a5a; }

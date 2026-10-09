@@ -2,7 +2,7 @@ import { loadCatalog } from './lib/catalog.js';
 import {
   summarise, applyFloors, gradeFor, cheapestFill, counted as countedOf, GRADES, baseOf,
   syncEstimate, fmtDur, planFromTier, solveGrade, defaultTier, pickGrade, pickBatch, bestNext, tierOptions, planTokens, HALL_OF_FUT,
-  sortOptions, showOptions, sortFilterSets, tokenLabel, tokenRows, overview, reachableScore, nextMilestone, OVER_REF, tagRows,
+  sortOptions, showOptions, sortFilterSets, tokenLabel, tokenRows, overview, overviewLists, reachableScore, nextMilestone, OVER_REF, tagRows,
 } from './lib/gallery.js';
 import { makeT, detectLang, localeOf, LANGS, FLAGS } from './lib/i18n.js';
 import { imgUrls } from './lib/img.js';
@@ -97,9 +97,10 @@ let sortBy = '';
 let show = 'all';
 const DEFS = new Map();   // setId → defs (gdefs:<id> önbelleği)
 const RECENT = 6 * 60 * 60 * 1000;
+const OV_TAB = 'overview';   // lig sekmelerinden önce "Genel" sekmesi (ızgara yerine öneri listeleri)
 
+tab = OV_TAB;   // açılışta hep "Genel" sekmesi (son seçilen lig hatırlanmaz)
 try {
-  tab = localStorage.getItem('fcg-tab');
   sortBy = localStorage.getItem('fcg-sort') || '';
   show = localStorage.getItem('fcg-show') || 'all';
 } catch (_) {}
@@ -134,12 +135,13 @@ function gradeTitle(set, g) {
 
 function renderTabs() {
   const tabName = CAT.categories.find((c) => c.id === tab)?.name || '';
+  $('syncTab').hidden = tab === OV_TAB;
   $('syncTab').textContent = t('btn.syncTab', { name: tabName.split(' / ')[0] });   // "Premier League / Barclays WSL" → kısa
   $('syncTab').title = t('btn.syncTab.title', { name: tabName });
   const bar = $('tabs');
   const keep = bar.scrollLeft;   // yeniden kurulunca kullanıcının kaydırdığı yer korunur
-  bar.replaceChildren(...CAT.categories.map((c) => h('button', {
-    class: c.id === tab ? 'on' : '', text: c.name,
+  bar.replaceChildren(...[{ id: OV_TAB, name: t('tab.overview'), title: t('tab.overview.title') }, ...CAT.categories].map((c) => h('button', {
+    class: c.id === tab ? 'on' : '', text: c.name, title: c.title || '',
     onclick: () => { tab = c.id; try { localStorage.setItem('fcg-tab', tab); } catch (_) {} render(); },
   })));
   bar.scrollLeft = keep;
@@ -425,14 +427,19 @@ async function render() {
   $('acct').textContent = state.galleryAcct?.name ? t('acct.label', { name: state.galleryAcct.name }) : '';
   applyFloors(CAT.sets, state.galleryGraded || {});
   fxTrack();
-  if (!CAT.categories.some((c) => c.id === tab)) tab = CAT.categories[0].id;
+  if (tab !== OV_TAB && !CAT.categories.some((c) => c.id === tab)) tab = OV_TAB;
   renderTabs();
   const img = imgUrls(state.galleryMeta?.imgBase);
   const sums = state.gallerySummary || {};
-  const sets = CAT.sets.filter((s) => s.cat === tab);
+  const isOv = tab === OV_TAB;
+  const sets = isOv ? CAT.sets : CAT.sets.filter((s) => s.cat === tab);
   computeNext();
-  const shown = sortFilterSets(sets, sums, NEXT, sortBy, show, state.galleryToGrade || {});
-  $('grid').replaceChildren(...(shown.length ? shown.map((s) => card(s, sums[s.id], img)) : [h('div', { class: 'empty', text: sets.length ? t('grid.emptyFilter') : t('grid.empty') })]));
+  $('grid').hidden = isOv;
+  $('ovl').hidden = !isOv;
+  for (const id of ['sortBox', 'showBox']) $(id).hidden = isOv;
+  if (isOv) renderOvLists(sums, img);
+  const shown = isOv ? [] : sortFilterSets(sets, sums, NEXT, sortBy, show, state.galleryToGrade || {});
+  if (!isOv) $('grid').replaceChildren(...(shown.length ? shown.map((s) => card(s, sums[s.id], img)) : [h('div', { class: 'empty', text: sets.length ? t('grid.emptyFilter') : t('grid.empty') })]));
   $('sort').value = sortBy;
   $('show').value = show;
 
@@ -456,6 +463,7 @@ function renderOverview(sums, tabSets) {
   if (document.activeElement?.classList?.contains('lvin')) return;   // seviye yazılırken yeniden çizme
   const all = overview(CAT.sets, sums, (id) => DEFS.get(id) || null);
   const tb = overview(tabSets, sums, (id) => DEFS.get(id) || null);
+  const tabV = (v) => (tab === OV_TAB ? '' : t('ov.tab', { v }));
   const box = (label, value, sub, cls = '', title = '') => h('div', { title }, [
     h('div', { class: 'l', text: label }), h('div', { class: 'v ' + cls }, value), sub ? h('div', { class: 's', text: sub }) : null,
   ]);
@@ -467,15 +475,98 @@ function renderOverview(sums, tabSets) {
     h('div', { title: t('ov.level.title') }, [h('div', { class: 'l', text: t('ov.level') }), h('div', { class: 'v a' }, [lvIn, h('span', { class: 'of', text: ' / 25' })]),
       h('div', { class: 's', text: lv ? (nm ? t('ov.level.next', { n: nm }) : t('ov.level.max')) : '' })]),
     box(t('ov.score'), cnt('ovScore', all.score), t('ov.synced', { n: all.synced, m: all.total }), 'g', t('ov.score.title')),
-    box(t('ov.earned'), fmt(all.earned), t('ov.tab', { v: fmt(tb.earned) }), 'g'),
-    box(t('ov.reachPts'), '+' + fmt(all.reachPts), t('ov.tab', { v: '+' + fmt(tb.reachPts) }), 'g', t('ov.reachPts.title')),
-    box(t('ov.reach'), fmt(all.reach), t('ov.reachCost', { c: kfmt(all.reachCost), t: kfmt(all.reachTax) }) + ' · ' + t('ov.tab', { v: fmt(tb.reach) }), 'a', t('ov.reach.title')),
-    box(t('ov.max'), fmt(all.max), t('ov.tab', { v: fmt(tb.max) })),
-    box(t('ov.sets'), `${all.done}/${all.total}`, t('ov.tab', { v: `${tb.done}/${tb.total}` })),
+    box(t('ov.earned'), fmt(all.earned), tabV(fmt(tb.earned)), 'g'),
+    box(t('ov.reachPts'), '+' + fmt(all.reachPts), tabV('+' + fmt(tb.reachPts)), 'g', t('ov.reachPts.title')),
+    box(t('ov.reach'), fmt(all.reach), [t('ov.reachCost', { c: kfmt(all.reachCost), t: kfmt(all.reachTax) }), tabV(fmt(tb.reach))].filter(Boolean).join(' · '), 'a', t('ov.reach.title')),
+    box(t('ov.max'), fmt(all.max), tabV(fmt(tb.max))),
+    box(t('ov.sets'), `${all.done}/${all.total}`, tabV(`${tb.done}/${tb.total}`)),
     gradeBox(),
   );
 }
 // "Oyunda notlandırılacak": kart alınan setler + çözüm kartlarının hepsi sende olanlar (tıklayınca listelenir)
+// ---------------------------------------------------------------- "Genel" sekmesi
+// FUTGenie Overview'dan farkı: her listede kaç token / kaç kart / maliyet + vergi, set başına "çoklu seçime ekle",
+// tamamlanmaya en yakında doldurma maliyeti + eksik kart yüzleri, bütçeye göre en çok token planı.
+function openAt(id, g = null, filter = 'all') {
+  openDetail(id);
+  if (g) openGrade = g;
+  cardFilter = filter;
+  renderDetail();
+}
+// Seti çoklu seçime ekle/çıkar; g verilirse sete özel hedef derece olur
+function selToggle(id, g = null) {
+  if (SEL.ids.includes(id)) { SEL.ids = SEL.ids.filter((x) => x !== id); delete SEL.grade[id]; }
+  else { SEL.ids = [...SEL.ids, id]; if (g) SEL.grade[id] = g; SEL.on = true; }
+  SEL.confirm = false;
+  saveSel();
+  render();
+}
+let ovPlanAdded = 0;   // "hepsini ekle" sonrası kısa onay (zaman damgası)
+function renderOvLists(sums, img) {
+  const L = overviewLists(CAT.sets, sums, (id) => DEFS.get(id) || null, { coins: availCoins(), live: livePrices(), n: 8 });
+  const panel = (title, sub, rows, empty, extra = null) => h('section', { class: 'ovp' }, [
+    h('h3', { text: title }), h('div', { class: 'note', text: sub }), extra,
+    rows.length ? h('div', { class: 'ovrows' }, rows) : h('div', { class: 'empty', text: empty }),
+  ]);
+  const addBtn = (id, g) => {
+    const on = SEL.ids.includes(id);
+    return h('button', { class: 'add' + (on ? ' on' : ''), text: on ? '✓' : '+', title: on ? t('ovl.in') : t('ovl.add'),
+      onclick: (e) => { e.stopPropagation(); selToggle(id, g); } });
+  };
+  const optRow = (o) => h('div', { class: 'ovr', onclick: () => openAt(o.set.id, o.g) }, [
+    setArt(o.set, img),
+    h('div', { class: 'n' }, [
+      h('b', { text: o.set.name }),
+      h('small', { text: t('ovl.row', { gain: o.gain, n: o.missing }) + (o.est ? t('pl.est') : '') }),
+    ]),
+    h('span', { class: 'gg ' + o.g, text: o.g }),
+    h('div', { class: 'c' }, [h('b', { text: kfmt(o.cost) }), h('small', { text: t('ovl.tax', { t: kfmt(o.tax) }) })]),
+    addBtn(o.set.id, o.g),
+  ]);
+  const closeRow = (r) => h('div', { class: 'ovr', onclick: () => openAt(r.set.id, null, 'missing') }, [
+    setArt(r.set, img),
+    h('div', { class: 'n' }, [
+      h('b', { text: r.set.name }),
+      h('small', {}, [t('ovl.left', { n: r.left }), r.gain ? h('span', { class: 'gn', text: ' · ' + t('ovl.fill', { gain: r.gain }) }) : null]),
+      r.pick.length ? h('div', { class: 'faces' }, r.pick.slice(0, 6).map((d) => icon(img.portrait(baseOf(d.def)), 'face'))) : null,
+    ]),
+    h('span', { class: 'frac', text: `${r.have}/${r.req}` }),
+    h('div', { class: 'c', title: r.priced < r.left ? t('ovl.fill.part', { k: r.priced, n: r.left }) : '' }, [
+      h('b', { text: (r.priced < r.left ? '≥ ' : '') + kfmt(r.cost) }), h('small', { text: t('ovl.tax', { t: kfmt(r.tax) }) }),
+    ]),
+    addBtn(r.set.id, null),
+  ]);
+  const topG = GRADES.at(-1);
+  const more = (n) => (n > 0 ? h('div', { class: 'note', style: 'padding:6px 4px', text: t('ovl.more', { n }) }) : null);
+
+  // Bütçe planı
+  const coins = availCoins();
+  let planBody;
+  if (!L.plan) planBody = [h('div', { class: 'empty', text: t('ovl.plan.none') })];
+  else if (!L.plan.picks.length) planBody = [h('div', { class: 'empty', text: t('ovl.plan.zero') })];
+  else {
+    const picks = L.plan.picks;
+    const just = Date.now() - ovPlanAdded < 4000;
+    planBody = [
+      h('div', { class: 'ovtot' }, [
+        h('b', { text: t('ovl.plan.tot', { t: L.plan.tokens, c: kfmt(L.plan.cost), tax: kfmt(L.plan.tax) }) }),
+        taskBtn({ class: 'b', text: just ? t('ovl.plan.added') : t('ovl.plan.add', { n: picks.length }), onclick: () => {
+          for (const o of picks) { if (!SEL.ids.includes(o.setId)) SEL.ids.push(o.setId); SEL.grade[o.setId] = o.g; }
+          SEL.on = true; SEL.confirm = false; ovPlanAdded = Date.now(); saveSel(); render();
+          $('selbar').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } }),
+      ]),
+      h('div', { class: 'ovrows' }, picks.map((o) => optRow({ set: CAT.sets.find((x) => x.id === o.setId), ...o }))),
+    ];
+  }
+  $('ovl').replaceChildren(
+    panel(t('ovl.cheap'), t('ovl.cheap.sub'), L.cheap.map(optRow), t('ovl.empty')),
+    panel(t('ovl.close'), t('ovl.close.sub'), L.close.map(closeRow), t('ovl.close.empty')),
+    panel(t('ovl.top', { g: topG }), t('ovl.top.sub'), [...L.top.map(optRow), more(L.topAll - L.top.length)].filter(Boolean), t('ovl.empty')),
+    h('section', { class: 'ovp wide' }, [h('h3', { text: t('ovl.plan') }), h('div', { class: 'note', text: t('ovl.plan.sub', { c: coins == null ? '—' : fmt(coins) }) }), ...planBody]),
+  );
+}
+
 function gradeBox() {
   const marked = state.galleryToGrade || {};
   const n = CAT.sets.filter((x) => marked[x.id] || NEXT.get(x.id)?.ready).length;
@@ -945,7 +1036,7 @@ function renderSel() {
       h('span', { class: 'kv', title: t('sel.avail.title'), text: availCoins() == null ? t('sel.avail.none') : t('sel.avail', { c: fmt(availCoins()) }) }),
       h('label', { class: 'kv' }, [t('sel.target') + ' ', gsel(SEL.target, t('sel.target.max'), (e) => { SEL.target = e.target.value || null; SEL.confirm = false; saveSel(); renderSel(); })]),
       h('span', { style: 'flex:1' }),
-      h('button', { class: 'g', text: t('sel.tabAll'), onclick: () => {
+      tab === OV_TAB ? null : h('button', { class: 'g', text: t('sel.tabAll'), onclick: () => {
         for (const x of CAT.sets) if (x.cat === tab && x.sol?.tiers?.length && !x.filter?.unsupported && !SEL.ids.includes(x.id)) SEL.ids.push(x.id);
         saveSel(); render();
       } }),

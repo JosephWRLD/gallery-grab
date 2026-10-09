@@ -347,3 +347,31 @@ test('solveGrade: havuz N karttan azsa ya da eşik aşılamıyorsa ulaşılamaz'
   // ilanı olmayan (canlı fiyat 0) ve fiyatsız kartlar havuza girmez
   assert.ok(G.solveGrade(set2, 'D', null, { 1: 0 }).unreachable);
 });
+
+test('overviewLists: en ucuz token, tamamlanmaya en yakın, en yüksek not ve bütçe planı', () => {
+  const a = mkSet({ id: 1, name: 'A' });
+  const b = mkSet({ id: 2, name: 'B' });
+  const u = mkSet({ id: 3, name: 'U', filter: { unsupported: true } });
+  const defsB = [def(101, 100, true), def(102, 200, true), def(103, 300, false), def(104, 400, false)];
+  const sB = G.summarise(b, defsB);
+  const sums = { 2: { collected: sB.collected, required: b.required, score: sB.score, earned: sB.earned } };
+  const defsOf = (id) => (id === 2 ? defsB : null);
+  const L = G.overviewLists([a, b, u], sums, defsOf, { coins: 2000 });
+  // desteklenmeyen set hiçbir listede yok
+  assert.ok(![...L.cheap, ...L.top, ...L.close].some((r) => r.set.id === 3));
+  // A eşitlenmedi: token başına en ucuz S (7401/28 < 3101/5)
+  assert.equal(L.cheap.find((r) => r.set.id === 1).g, 'S');
+  // en yüksek not ucuzdan pahalıya: B setinde 102 sende → S yalnız 103+104 (6.500), A'da 7.400
+  assert.deepEqual(L.top.map((r) => [r.set.id, r.cost]), [[2, 6500], [1, 7400]]);
+  // tamamlanmaya en yakın: yalnız eşitlenmiş B, 1 boş yuva en ucuz kartla (103 → 1.500), B notu → +5 token
+  assert.equal(L.close.length, 1);
+  assert.equal(L.close[0].left, 1);
+  assert.equal(L.close[0].cost, 1500);
+  assert.equal(L.close[0].gain, 5);
+  // canlı fiyat fut.gg'yi ezer
+  assert.equal(G.overviewLists([b], sums, defsOf, { live: { 103: 900 } }).close[0].cost, 900);
+  // 2.000 coin: yalnız B setinin B notu (1.500) sığar
+  assert.equal(L.plan.tokens, 5);
+  assert.deepEqual(L.plan.picks.map((o) => [o.setId, o.g]), [[2, 'B']]);
+  assert.equal(G.overviewLists([a], {}, () => null).plan, null);
+});
