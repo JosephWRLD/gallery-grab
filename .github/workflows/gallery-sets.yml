@@ -29,8 +29,8 @@ jobs:
             echo "Katalog değişmedi"
             exit 0
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "JosephWRLD"
+          git config user.email "76696237+JosephWRLD@users.noreply.github.com"
           git add data/gallery-sets.json
           git commit -m "Galeri kataloğu: $(date -u +%Y-%m-%d)"
           # aynı anda başka bir push olduysa üstüne al (reddedilmesin)
