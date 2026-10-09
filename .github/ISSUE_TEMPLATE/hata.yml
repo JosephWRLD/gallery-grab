@@ -1,0 +1,72 @@
+name: Hata bildir / Bug report
+description: Bir şey çalışmıyor ya da yanlış görünüyor / Something is broken or looks wrong
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Bildirmeden önce son sürümde olduğundan emin ol (galeri ekranı *Yeni sürüm var* diyorsa önce güncelle).
+        Make sure you're on the latest version first (update if the Gallery screen says *New version available*).
+  - type: dropdown
+    id: surum-turu
+    attributes:
+      label: Sürüm / Edition
+      options:
+        - Chrome eklentisi / Chrome extension
+        - Tampermonkey
+    validations:
+      required: true
+  - type: input
+    id: surum
+    attributes:
+      label: Sürüm numarası / Version
+      description: "chrome://extensions ya da Tampermonkey panosunda yazar / Shown in chrome://extensions or the Tampermonkey dashboard"
+      placeholder: "1.7.0 / 2.4.0"
+    validations:
+      required: true
+  - type: input
+    id: tarayici
+    attributes:
+      label: Tarayıcı / Browser
+      placeholder: "Chrome 141, Opera GX, Edge…"
+    validations:
+      required: true
+  - type: textarea
+    id: ne-oldu
+    attributes:
+      label: Ne oldu? / What happened?
+      description: Hangi set, hangi düğme, ne gördün? / Which set, which button, what did you see?
+    validations:
+      required: true
+  - type: textarea
+    id: beklenen
+    attributes:
+      label: Ne olmasını bekliyordun? / What did you expect?
+  - type: textarea
+    id: adimlar
+    attributes:
+      label: Adımlar / Steps to reproduce
+      placeholder: |
+        1. Galeri → Premier League
+        2. Arsenal → A
+        3. Eşitle + güncel fiyat
+  - type: textarea
+    id: teshis
+    attributes:
+      label: Teşhis raporu / Diagnostics report
+      description: |
+        Setler 0/N görünüyorsa: galeri ekranında **Teşhis** → set seç → **Çalıştır** → **Kopyala**, buraya yapıştır.
+        If sets show 0/N: **Diagnostics** on the Gallery screen → pick a set → **Run** → **Copy**, paste here.
+      render: json
+  - type: textarea
+    id: ekran
+    attributes:
+      label: Ekran görüntüsü / Screenshot
+      description: EA hesap adını ve e-postanı kapat / Hide your EA account name and e-mail
+  - type: checkboxes
+    id: onay
+    attributes:
+      label: Onay / Confirmation
+      options:
+        - label: Raporda kişisel bilgi, oturum anahtarı ya da şifre yok / The report contains no personal info, session token or password
+          required: true

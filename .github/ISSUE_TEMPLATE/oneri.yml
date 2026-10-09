@@ -1,0 +1,23 @@
+name: Öneri / Feature request
+description: Yeni bir özellik ya da iyileştirme öner / Suggest a new feature or improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: sorun
+    attributes:
+      label: Hangi sorunu çözüyor? / What problem does it solve?
+      placeholder: "Her seferinde … yapmak zorunda kalıyorum / Every time I have to …"
+    validations:
+      required: true
+  - type: textarea
+    id: oneri
+    attributes:
+      label: Önerin / Your idea
+      description: Nasıl çalışmasını istersin? / How should it work?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatif
+    attributes:
+      label: Başka yollar / Alternatives
+      description: Şu an nasıl idare ediyorsun, başka bir araçta gördün mü? / How do you manage now, seen it elsewhere?
